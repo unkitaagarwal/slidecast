@@ -1620,17 +1620,23 @@ def _diagnostics():
 
 def main():
     import uvicorn, threading, webbrowser, time
+    # Render (and other PaaS) inject PORT; fall back to 8765 for local dev
+    port = int(os.environ.get("PORT", 8765))
+    # Bind to 0.0.0.0 so Render's router can reach the process;
+    # on localhost this is identical to 127.0.0.1 in practice.
+    host = "0.0.0.0"
+    is_local = port == 8765 and not os.environ.get("RENDER")
     print("\n" + "=" * 60)
-    print("  RecipeVault Studio — http://localhost:8765")
+    print(f"  RecipeVault Studio — http://localhost:{port}")
     print("=" * 60)
     _diagnostics()
     print("  Tip: Press Ctrl+C to stop.\n")
-    # Auto-open the browser ~1.5s after the server boots
-    threading.Thread(
-        target=lambda: (time.sleep(1.5), webbrowser.open("http://localhost:8765")),
-        daemon=True,
-    ).start()
-    uvicorn.run(app, host="127.0.0.1", port=8765, log_level="info")
+    if is_local:
+        threading.Thread(
+            target=lambda: (time.sleep(1.5), webbrowser.open(f"http://localhost:{port}")),
+            daemon=True,
+        ).start()
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
