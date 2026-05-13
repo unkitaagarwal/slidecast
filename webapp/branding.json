@@ -1,0 +1,14 @@
+{
+  "_comment": "Change these values to rebrand RecipeVault Studio for any product. Restart the server to apply.",
+
+  "brand_name":      "RecipeVault",
+  "studio_name":     "Studio",
+  "tagline_html":    "Generate viral<br/>TikTok carousels<br/>in <em>30 seconds.</em>",
+  "subtagline":      "Pick a format. Type a vibe. Get a 10–12 slide carousel with food-magazine photos, a parchment recipe page, and a built-in app CTA — ready to drop into your TikTok inbox.",
+  "eyebrow":         "For RecipeVault creators",
+  "primary_color":   "#ff5c7a",
+  "secondary_color": "#f4c47a",
+  "tiktok_handle":   "@nutrilens.ai",
+  "cta_phrase":      "Save these recipes easily with RecipeVault app! Link in bio",
+  "footer_meta":     "runs locally · uses your Gemini key from .env"
+}

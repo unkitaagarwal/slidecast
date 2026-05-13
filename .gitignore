@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.env
+output/
+output_compilations/
+output_compilations_instagram/
+output_templates/
+ready_to_post/
+ready_to_post_instagram/
+viral_trending_10/
+webapp/uploads/brand_logos/*
+!webapp/uploads/brand_logos/.gitkeep
+webapp/tracking/data/snapshots/*.json
+*.zip

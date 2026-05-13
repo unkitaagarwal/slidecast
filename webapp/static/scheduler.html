@@ -1,0 +1,2299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scheduler — RecipeVault Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ── RecipeVault Studio design tokens ─────────────────────── */
+:root {
+  --bg:      #0a0807;
+  --card:    rgba(255, 247, 232, 0.04);
+  --card2:   rgba(255, 247, 232, 0.08);
+  --border:  rgba(255, 247, 232, 0.10);
+  --border2: rgba(255, 247, 232, 0.18);
+  --accent:  #ff5c7a;
+  --accentH: #ff89a3;
+  --text:    #fbf6ec;
+  --muted:   #aea394;
+  --success: #66c992;
+  --error:   #e8607a;
+  --warn:    #f4c47a;
+  --serif:   'Fraunces', 'Times New Roman', serif;
+  --sans:    'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding-bottom: 100px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Animated mesh background ── */
+.mesh {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+  background: var(--bg);
+}
+.mesh-blob {
+  position: absolute; border-radius: 50%;
+  filter: blur(120px); opacity: 0.35; will-change: transform;
+}
+.mesh-blob-1 {
+  width: 700px; height: 700px;
+  background: radial-gradient(circle, #ff5c7a, transparent 60%);
+  top: -200px; left: -100px;
+  animation: mb1 22s ease-in-out infinite;
+}
+.mesh-blob-2 {
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, #f4c47a, transparent 60%);
+  top: 200px; right: -100px;
+  animation: mb2 26s ease-in-out infinite; opacity: 0.25;
+}
+.mesh-blob-3 {
+  width: 560px; height: 560px;
+  background: radial-gradient(circle, #7c4f8f, transparent 60%);
+  top: 60vh; left: 30%;
+  animation: mb3 30s ease-in-out infinite; opacity: 0.22;
+}
+@keyframes mb1 { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(60px,80px) scale(1.1)} 66%{transform:translate(-50px,50px) scale(.95)} }
+@keyframes mb2 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-100px,70px) scale(1.15)} }
+@keyframes mb3 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(140px,-80px) scale(.88)} }
+
+/* ── Nav ── */
+.rv-nav {
+  position: sticky; top: 0; z-index: 30;
+  backdrop-filter: blur(20px) saturate(160%);
+  background: linear-gradient(to bottom, rgba(10,8,7,.85), rgba(10,8,7,.55));
+  border-bottom: 1px solid rgba(255,247,232,.06);
+}
+.rv-nav-inner {
+  max-width: 1100px; margin: 0 auto; padding: 14px 28px;
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+}
+.rv-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
+.rv-brand-mark {
+  display: inline-grid; place-items: center;
+  width: 32px; height: 32px; border-radius: 9px;
+  background: linear-gradient(135deg, #ff5c7a 0%, #f4c47a 100%);
+  color: #1a0c0e; box-shadow: 0 4px 14px rgba(255,92,122,.28); flex-shrink: 0;
+}
+.rv-brand-name {
+  font-family: var(--serif); font-weight: 600;
+  font-size: 19px; letter-spacing: -0.01em; color: var(--text);
+}
+.rv-brand-name em { font-style: italic; font-weight: 400; opacity: 0.75; }
+.rv-nav-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 999px;
+  background: rgba(255,92,122,.10); border: 1px solid rgba(255,92,122,.25);
+  color: #ff89a3; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+}
+.rv-nav-badge-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #ff5c7a; box-shadow: 0 0 8px rgba(255,92,122,.8);
+  animation: bpulse 1.6s ease-in-out infinite;
+}
+@keyframes bpulse { 0%,100%{opacity:.5;transform:scale(1)} 50%{opacity:1;transform:scale(1.3)} }
+.rv-nav-back {
+  font-size: 13px; font-weight: 600; color: var(--muted);
+  text-decoration: none; display: flex; align-items: center; gap: 6px;
+  transition: color .15s;
+}
+.rv-nav-back:hover { color: var(--text); }
+
+/* ── Page wrapper ── */
+.container { max-width: 1000px; margin: 0 auto; padding: 40px 28px; position: relative; z-index: 1; }
+
+/* ── Page title ── */
+.page-title { margin-bottom: 36px; }
+.page-title h1 {
+  font-family: var(--serif); font-weight: 600; font-size: 42px;
+  line-height: 1.05; letter-spacing: -0.03em; color: var(--text);
+}
+.page-title h1 em {
+  font-style: italic; font-weight: 400;
+  background: linear-gradient(180deg, var(--warn) 0%, var(--accent) 100%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.subtitle { color: var(--muted); font-size: 15px; margin-top: 6px; }
+
+/* ── Section labels ── */
+.section-label {
+  font-size: 10px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 12px;
+}
+
+/* ── Cards ── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px; padding: 22px; margin-top: 20px;
+  backdrop-filter: blur(8px);
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--sans); font-weight: 700; font-size: 14px;
+  padding: 11px 20px; border-radius: 999px; border: none;
+  cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, background .15s ease;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none !important; }
+.btn:active { transform: scale(.97); }
+
+/* Default accent btn → coral pill */
+.btn:not(.btn-outline):not(.btn-success):not(.btn-danger):not(.btn-sm.btn-outline) {
+  background: linear-gradient(180deg, #fff 0%, #fbe7d0 100%);
+  color: #1a0c0e;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 1px 2px rgba(0,0,0,.4), 0 10px 24px -6px rgba(255,92,122,.5);
+}
+.btn:not(.btn-outline):not(.btn-success):not(.btn-danger):not(.btn-sm.btn-outline):hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 1px 2px rgba(0,0,0,.4), 0 16px 32px -6px rgba(255,92,122,.7);
+}
+
+.btn-sm { padding: 7px 14px; font-size: 12px; border-radius: 999px; }
+.btn-outline {
+  background: var(--card2) !important;
+  border: 1px solid var(--border2) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+.btn-outline:hover { background: rgba(255,247,232,.12) !important; border-color: rgba(255,247,232,.3) !important; transform: none !important; }
+
+.btn-success {
+  background: linear-gradient(135deg, #66c992, #3daa73) !important;
+  color: #0a0807 !important; box-shadow: 0 8px 20px -4px rgba(102,201,146,.4) !important;
+}
+.btn-success:hover { transform: translateY(-1px) !important; box-shadow: 0 12px 26px -4px rgba(102,201,146,.55) !important; }
+
+.btn-danger {
+  background: transparent !important; color: var(--error) !important;
+  border: 1px solid rgba(232,96,122,.35) !important; box-shadow: none !important;
+}
+.btn-danger:hover { background: rgba(232,96,122,.10) !important; }
+
+.link { color: var(--accent); text-decoration: none; font-size: 13px; }
+.link:hover { text-decoration: underline; }
+
+/* ── API key row ── */
+.key-row { display: flex; gap: 10px; }
+.key-input {
+  flex: 1; background: var(--card2); border: 1px solid var(--border);
+  border-radius: 12px; color: var(--text); font-size: 14px;
+  padding: 11px 15px; outline: none; font-family: monospace;
+  transition: border-color .2s;
+}
+.key-input:focus { border-color: var(--accent); }
+
+/* ── Integrations ── */
+.int-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.int-chip {
+  display: flex; align-items: center; gap: 9px;
+  background: var(--card2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 9px 14px; font-size: 13px;
+  cursor: pointer; user-select: none; transition: all .15s;
+}
+.int-chip:hover:not(.active) { border-color: rgba(255,247,232,.22); }
+.int-chip.active { border-color: var(--accent); background: rgba(255,92,122,.10); }
+.int-chip.active .int-name { color: var(--accent); }
+.int-chip img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
+.int-chip .pi { font-size: 18px; width: 26px; text-align: center; line-height: 1; }
+.int-name { font-weight: 600; line-height: 1.2; transition: color .15s; }
+.int-platform { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.int-check { font-size: 13px; margin-left: 2px; opacity: 0; transition: opacity .15s; }
+.int-chip.active .int-check { opacity: 1; }
+
+/* ── Drop zone ── */
+.drop-zone {
+  border: 2px dashed var(--border); border-radius: 14px;
+  padding: 36px 20px 28px; text-align: center; cursor: pointer;
+  background: var(--card2); transition: border-color .2s, background .2s;
+  display: flex; flex-direction: column; align-items: center;
+}
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(255,92,122,.06); }
+.dz-icon { font-size: 44px; display: block; margin-bottom: 14px; }
+.drop-zone strong { font-size: 16px; }
+.drop-zone p { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.dz-browse-btn {
+  margin-top: 16px; display: inline-flex; align-items: center; gap: 6px;
+  background: var(--card); border: 1px solid var(--border2);
+  border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 600;
+  color: var(--text); cursor: pointer; transition: background .15s, border-color .15s;
+  font-family: var(--sans);
+}
+.dz-browse-btn:hover { background: var(--card2); border-color: var(--accent); color: var(--accent); }
+
+/* ── Folder loader zone ── */
+.folder-zone {
+  border: 2px dashed rgba(255,92,122,.25); border-radius: 14px;
+  padding: 28px 20px; background: var(--card2);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.folder-zone-title { font-size: 16px; font-weight: 700; }
+.folder-zone-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.folder-browse-big { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px 10px 10px; }
+.folder-browse-icon { font-size: 36px; }
+.folder-browse-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: linear-gradient(180deg,#fff 0%,#fbe7d0 100%);
+  color: #1a0c0e; border: none; border-radius: 999px; padding: 11px 22px;
+  font-size: 14px; font-weight: 700; cursor: pointer; transition: transform .15s, box-shadow .15s;
+  font-family: var(--sans);
+  box-shadow: 0 8px 20px -4px rgba(255,92,122,.4);
+}
+.folder-browse-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 26px -4px rgba(255,92,122,.55); }
+.folder-browse-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.folder-or-row {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--muted); font-size: 12px;
+}
+.folder-or-row::before, .folder-or-row::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.folder-input-row { display: flex; gap: 10px; }
+.folder-path-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 12px; color: var(--text); font-size: 13px;
+  padding: 10px 14px; outline: none; font-family: monospace;
+  transition: border-color .2s;
+}
+.folder-path-input:focus { border-color: var(--accent); }
+.folder-hint { font-size: 11px; color: var(--muted); line-height: 1.6; }
+.folder-hint code { background: var(--bg); border-radius: 4px; padding: 1px 5px; font-family: monospace; color: var(--accent); }
+
+/* ── Queue header ── */
+.queue-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 36px 0 16px;
+}
+.queue-title { font-size: 17px; font-weight: 700; }
+.q-badge {
+  background: var(--accent); color: #fff; border-radius: 20px;
+  padding: 2px 9px; font-size: 12px; font-weight: 700; margin-left: 8px;
+}
+.queue-actions { display: flex; gap: 10px; }
+
+/* ── Progress ── */
+.progress-wrap { margin-bottom: 18px; }
+.progress-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 7px; }
+.progress-track { background: var(--card2); border-radius: 4px; height: 5px; overflow: hidden; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--warn)); border-radius: 4px; transition: width .35s; }
+
+/* ── Post card ── */
+.post-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 20px; margin-bottom: 14px;
+  transition: border-color .2s; backdrop-filter: blur(8px);
+}
+.post-card.st-done      { border-color: rgba(102,201,146,.45); }
+.post-card.st-error     { border-color: rgba(232,96,122,.45); }
+.post-card.st-uploading,
+.post-card.st-scheduling { border-color: rgba(255,92,122,.4); }
+
+.card-top { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
+.thumb {
+  width: 74px; height: 74px; border-radius: 12px; flex-shrink: 0;
+  background: var(--card2); overflow: hidden;
+  display: flex; align-items: center; justify-content: center; font-size: 28px;
+}
+.thumb video, .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.post-info { flex: 1; min-width: 0; }
+.post-fname { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.post-fsize { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.post-status-row { margin-top: 8px; }
+
+.card-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 620px) { .card-body { grid-template-columns: 1fr; } }
+
+.field-label {
+  font-size: 10px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .8px; margin-bottom: 7px;
+}
+.caption-ta {
+  width: 100%; background: var(--card2); border: 1px solid var(--border);
+  border-radius: 12px; color: var(--text); font-size: 13px;
+  padding: 10px 13px; resize: vertical; min-height: 80px;
+  outline: none; font-family: var(--sans); transition: border-color .2s; line-height: 1.5;
+}
+.caption-ta:focus { border-color: var(--accent); }
+.dt-input {
+  width: 100%; background: var(--card2); border: 1px solid var(--border);
+  border-radius: 12px; color: var(--text); font-size: 13px;
+  padding: 10px 13px; outline: none; appearance: none;
+  cursor: pointer; transition: border-color .2s; font-family: var(--sans);
+}
+.dt-input:focus { border-color: var(--accent); }
+
+/* ── Account chips (per-post) ── */
+.acc-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.acc-chip {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 5px 12px; font-size: 12px; cursor: pointer;
+  background: var(--card2); user-select: none; transition: all .15s;
+}
+.acc-chip.selected { border-color: var(--accent); background: rgba(255,92,122,.12); color: var(--accent); }
+.acc-chip:hover:not(.selected) { border-color: rgba(255,247,232,.22); }
+.acc-chip img { width: 16px; height: 16px; border-radius: 50%; }
+.acc-chip .spi { font-size: 14px; width: 16px; text-align: center; line-height: 1; }
+
+/* ── Status badges ── */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: 999px; font-size: 11px; font-weight: 700;
+}
+.badge-pending    { background: rgba(174,163,148,.12); color: var(--muted); }
+.badge-uploading  { background: rgba(255,92,122,.14); color: var(--accent); }
+.badge-scheduling { background: rgba(244,196,122,.14); color: var(--warn); }
+.badge-done       { background: rgba(102,201,146,.14); color: var(--success); }
+.badge-error      { background: rgba(232,96,122,.14); color: var(--error); }
+
+/* ── Spinner ── */
+.spin {
+  width: 11px; height: 11px; border: 2px solid rgba(255,255,255,.2);
+  border-top-color: currentColor; border-radius: 50%;
+  animation: rot .65s linear infinite; flex-shrink: 0;
+}
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* ── Toast ── */
+.toast-wrap {
+  position: fixed; bottom: 28px; right: 28px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+.toast {
+  background: rgba(20,16,14,.95); border: 1px solid var(--border2); border-radius: 14px;
+  padding: 12px 16px; font-size: 13px; min-width: 240px; max-width: 360px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6); pointer-events: auto;
+  display: flex; align-items: center; gap: 10px;
+  animation: tIn .28s ease both; backdrop-filter: blur(16px);
+}
+.toast.ok   { border-color: rgba(102,201,146,.4); }
+.toast.fail { border-color: rgba(232,96,122,.4); }
+@keyframes tIn  { from { transform: translateX(110%); opacity: 0; } }
+@keyframes tOut { to   { transform: translateX(110%); opacity: 0; } }
+.toast.bye { animation: tOut .28s ease forwards; }
+
+/* ── Slideshow strip ── */
+.slide-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.slide-thumb { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
+.slide-count {
+  display: flex; align-items: center; justify-content: center;
+  width: 52px; height: 52px; border-radius: 8px;
+  background: var(--card2); border: 1px dashed var(--border);
+  font-size: 12px; color: var(--muted); flex-shrink: 0;
+}
+
+/* ── Cadence settings ── */
+.cadence-settings {
+  background: var(--card2); border-radius: 12px; padding: 18px;
+  border: 1px solid var(--border);
+}
+.cadence-preview {
+  margin-top: 12px; font-size: 12px; color: var(--muted); line-height: 1.9;
+  background: rgba(0,0,0,.25); border-radius: 10px; padding: 12px 16px;
+}
+
+/* ── Skipped folders panel ── */
+.skipped-panel {
+  background: var(--card); border: 1px solid rgba(232,96,122,.35);
+  border-radius: 16px; padding: 20px; margin-top: 14px;
+}
+.skipped-panel-title {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+}
+.skipped-panel-title strong { color: var(--error); font-size: 14px; }
+.skipped-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.skipped-table th {
+  text-align: left; color: var(--muted); font-size: 10px;
+  font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+  padding: 0 8px 8px 0; border-bottom: 1px solid var(--border);
+}
+.skipped-table td { padding: 7px 8px 7px 0; border-bottom: 1px solid rgba(255,247,232,.05); vertical-align: middle; }
+.skipped-table tr:last-child td { border-bottom: none; }
+.skipped-count-badge {
+  display: inline-block; background: rgba(232,96,122,.12);
+  color: var(--error); border-radius: 6px; padding: 2px 7px; font-size: 12px; font-weight: 700;
+}
+.skipped-name { font-family: monospace; font-size: 12px; color: var(--text); word-break: break-all; }
+
+/* ── Stitch card ── */
+#stitchCard { margin-top: 20px; }
+
+/* ── Utility ── */
+.hidden { display: none !important; }
+.row { display: flex; align-items: center; gap: 10px; }
+.spacer { flex: 1; }
+</style>
+</head>
+<body>
+
+<!-- ── Animated mesh background ── -->
+<div class="mesh">
+  <div class="mesh-blob mesh-blob-1"></div>
+  <div class="mesh-blob mesh-blob-2"></div>
+  <div class="mesh-blob mesh-blob-3"></div>
+</div>
+
+<!-- ── Nav ── -->
+<header class="rv-nav">
+  <div class="rv-nav-inner">
+    <a class="rv-brand" href="/">
+      <span class="rv-brand-mark">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M6 4h10a4 4 0 014 4v12H6a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" stroke-width="2"/>
+          <path d="M9 10l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="rv-brand-name">RecipeVault <em>Studio</em></span>
+    </a>
+    <div class="rv-nav-badge">
+      <span class="rv-nav-badge-dot"></span>
+      Bulk Scheduler
+    </div>
+    <a class="rv-nav-back" href="/">
+      ← Back to Studio
+    </a>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ── Page title ── -->
+  <div class="page-title">
+    <h1>Postiz Bulk <em>Scheduler</em></h1>
+    <p class="subtitle">Upload videos &amp; images · Schedule to Instagram, TikTok, YouTube &amp; more</p>
+  </div>
+
+  <!-- ── API Key ── -->
+  <div class="card" id="apiCard">
+    <div class="section-label">Postiz API Key</div>
+    <div class="key-row">
+      <input class="key-input" id="keyInput" type="password"
+             placeholder="Paste your API key here…">
+      <button class="btn" id="connectBtn" onclick="connect()">Connect</button>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)">
+      Find it at
+      <a class="link" href="https://platform.postiz.com/settings" target="_blank">
+        platform.postiz.com → Settings → API Key
+      </a>
+      &nbsp;·&nbsp; Saved locally in your browser.
+    </div>
+  </div>
+
+  <!-- ── Anthropic API Key (for auto-caption) ── -->
+
+  <!-- ── Connected Accounts / Channel Selector ── -->
+  <div class="card hidden" id="intCard">
+    <div class="row" style="margin-bottom:6px">
+      <div class="section-label" style="margin:0">Post To — Select Channels</div>
+      <div class="spacer"></div>
+      <button class="btn btn-outline btn-sm" style="padding:5px 10px;font-size:11px"
+              onclick="selectAllChannels()">Select All</button>
+      <button class="btn btn-outline btn-sm" style="padding:5px 10px;font-size:11px"
+              onclick="selectNoneChannels()">Deselect All</button>
+      <button class="btn btn-outline btn-sm" onclick="loadIntegrations()">↻ Refresh</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      Click to toggle which channels new posts will be sent to. You can also adjust per-post below.
+    </div>
+    <div class="int-grid" id="intGrid">
+      <span style="color:var(--muted);font-size:13px">Loading…</span>
+    </div>
+  </div>
+
+  <!-- ── Scheduling / Cadence ── -->
+  <div class="card hidden" id="schedModeCard">
+    <div class="section-label">📅 Daily Cadence — 8 AM to 8 PM EST</div>
+    <div class="cadence-settings">
+      <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+        <div>
+          <div class="field-label">Posts Per Day</div>
+          <input type="number" id="postsPerDay" min="1" max="12" value="3"
+                 class="dt-input" style="width:110px"
+                 oninput="cadenceChanged()">
+        </div>
+        <div>
+          <div class="field-label">Start Date</div>
+          <input type="date" id="cadenceStartDate" class="dt-input" style="width:170px"
+                 oninput="cadenceChanged()">
+        </div>
+      </div>
+      <div id="cadencePreview" class="cadence-preview"></div>
+    </div>
+  </div>
+
+  <!-- ── Instagram Audio ── -->
+  <div class="card hidden" id="instaAudioCard">
+    <div class="row" style="margin-bottom:6px">
+      <div class="section-label" style="margin:0">🎵 Instagram Reels — Auto Audio</div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin:0;line-height:1.6">
+      Instagram slideshows are automatically converted to a
+      <strong style="color:var(--fg)">Reel (video)</strong> with a randomly picked background
+      track from <code style="color:var(--warn);font-size:12px">assets/insta_audio/</code>.
+      Each post gets a different song — no setup required.
+      Add or remove mp3 files from that folder to manage your rotation.
+    </p>
+  </div>
+
+  <!-- ── Drop Zone ── -->
+  <div class="card hidden" id="dropCard">
+    <div class="section-label">Add Files</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+
+      <!-- Individual videos/images -->
+      <div class="drop-zone" id="dropZone">
+        <span class="dz-icon">🎬</span>
+        <strong>Videos &amp; Images</strong>
+        <p>Drag &amp; drop files here</p>
+        <p style="font-size:11px;color:var(--muted);margin-top:2px">MP4 · MOV · JPG · PNG</p>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="dz-browse-btn" style="margin-top:0"
+                  onclick="event.stopPropagation();document.getElementById('fileInput').click()">
+            📄 Browse Files
+          </button>
+          <button class="dz-browse-btn" style="margin-top:0"
+                  onclick="event.stopPropagation();document.getElementById('videoFolderInput').click()">
+            📂 Browse Folder
+          </button>
+        </div>
+      </div>
+
+      <!-- Slideshow / carousel via folder picker -->
+      <div class="folder-zone">
+        <div>
+          <div class="folder-zone-title">🖼️ Slideshow / Carousel</div>
+          <div class="folder-zone-sub">Select a folder — one post with all slides</div>
+        </div>
+        <div class="folder-browse-big">
+          <span class="folder-browse-icon">📂</span>
+          <button class="folder-browse-btn" id="folderBrowseBtn"
+                  onclick="document.getElementById('folderBrowseInput').click()">
+            Choose Folder
+          </button>
+          <span style="font-size:12px;color:var(--muted)">
+            Folder needs a <code style="background:var(--bg);padding:1px 5px;border-radius:4px;color:var(--accent);font-family:monospace">slides/</code> subfolder &amp; <code style="background:var(--bg);padding:1px 5px;border-radius:4px;color:var(--accent);font-family:monospace">.json</code> file
+          </span>
+        </div>
+        <div class="folder-or-row">or paste path manually</div>
+        <div class="folder-input-row">
+          <input class="folder-path-input" id="folderInput"
+                 placeholder="/Users/you/carousels/my_slideshow">
+          <button class="btn btn-sm" id="loadFolderBtn" onclick="loadSlideshowFromFolder()"
+                  style="padding:8px 14px;font-size:12px">Load</button>
+        </div>
+      </div>
+    </div>
+    <input type="file" id="fileInput"         multiple accept="video/*,image/*" style="display:none">
+    <input type="file" id="videoFolderInput" webkitdirectory style="display:none">
+    <input type="file" id="folderBrowseInput" webkitdirectory style="display:none">
+  </div>
+
+  <!-- ── Video Stitch Tool ── -->
+  <div class="card" id="stitchCard">
+    <div class="section-label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span>🎬</span> Stitch Source + CTA Video
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:18px">
+      Pick <strong style="color:var(--text)">one video or a whole folder</strong> of source videos — each gets stitched
+      with the same CTA clip. Download individually or grab everything as a ZIP.
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:18px">
+
+      <!-- ── SOURCE column ── -->
+      <div>
+        <div class="field-label">Source Videos</div>
+
+        <!-- File pickers -->
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" title="Pick individual video files"
+                  onclick="document.getElementById('stitchSourceFiles').click()">
+            📄 Browse Files
+          </button>
+          <button class="btn btn-outline btn-sm" title="Pick an entire folder of videos"
+                  onclick="document.getElementById('stitchSourceFolder').click()">
+            📁 Browse Folder
+          </button>
+          <button class="btn btn-outline btn-sm" title="Clear source selection"
+                  onclick="stitchClearSource()" style="color:var(--error);border-color:var(--error)">✕</button>
+        </div>
+        <input type="file" id="stitchSourceFiles"  accept="video/*" multiple style="display:none"
+               onchange="stitchSourceFilesChosen(this)">
+        <input type="file" id="stitchSourceFolder" accept="video/*" webkitdirectory style="display:none"
+               onchange="stitchSourceFolderChosen(this)">
+
+        <!-- File list -->
+        <div id="stitchSourceList"
+             style="min-height:36px;max-height:160px;overflow-y:auto;background:var(--card2);
+                    border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--muted)">
+          No files selected
+        </div>
+
+        <!-- OR disk path -->
+        <div style="margin-top:10px;font-size:11px;color:var(--muted);margin-bottom:4px">
+          — or type a folder path (server reads from disk) —
+        </div>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="stitchFolderPath" class="key-input"
+                 placeholder="/Users/harsh/Videos/sources"
+                 style="font-size:12px;flex:1"
+                 oninput="stitchClearSource()">
+        </div>
+      </div>
+
+      <!-- ── CTA column ── -->
+      <div>
+        <div class="field-label">CTA Video (single, applied to all)</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button class="btn btn-outline btn-sm"
+                  onclick="document.getElementById('stitchCtaFile').click()">
+            📂 Browse
+          </button>
+          <span id="stitchCtaName"
+                style="font-size:12px;color:var(--muted);align-self:center;
+                       overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px">
+            No file chosen
+          </span>
+        </div>
+        <input type="file" id="stitchCtaFile" accept="video/*" style="display:none"
+               onchange="stitchCtaFileChosen(this)">
+        <input type="text" id="stitchCtaUrl" class="key-input"
+               placeholder="…or paste CTA URL / disk path"
+               style="font-size:12px"
+               oninput="stitchClearCta()">
+      </div>
+    </div>
+
+    <!-- Source seconds + Stitch button -->
+    <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:6px">
+      <div>
+        <div class="field-label">Source clip length (seconds)</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="range" id="stitchSecRange" min="1" max="30" value="5" step="1"
+                 style="width:140px;accent-color:var(--accent)"
+                 oninput="document.getElementById('stitchSecVal').textContent=this.value">
+          <span id="stitchSecVal"
+                style="font-size:15px;font-weight:700;color:var(--accent);min-width:28px">5</span>
+          <span style="font-size:12px;color:var(--muted)">sec</span>
+        </div>
+      </div>
+      <button class="btn" id="stitchBtn" onclick="runStitch()" style="padding:11px 24px">
+        🎬 Stitch All
+      </button>
+    </div>
+
+    <!-- Progress bar -->
+    <div id="stitchProgress" style="display:none;margin-top:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px">
+        <span id="stitchProgLabel">Stitching…</span>
+        <span id="stitchProgFrac"></span>
+      </div>
+      <div style="background:var(--card2);border-radius:6px;height:6px;overflow:hidden">
+        <div id="stitchProgFill"
+             style="height:100%;background:var(--accent);transition:width .3s;width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="stitchResults" style="display:none;margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:600;color:var(--success)" id="stitchResultsTitle">✓ Done</div>
+        <a id="stitchZipLink" href="#" class="btn btn-outline btn-sm" download="stitched_videos.zip"
+           style="display:none">⬇ Download All (ZIP)</a>
+      </div>
+      <div id="stitchResultsList"
+           style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+
+    <div id="stitchError"
+         style="display:none;margin-top:12px;font-size:13px;color:var(--error)"></div>
+  </div>
+
+  <!-- ── Post Queue ── -->
+  <div id="queueWrap" class="hidden">
+    <div class="queue-header">
+      <div>
+        <span class="queue-title">Post Queue</span>
+        <span class="q-badge" id="qBadge">0</span>
+      </div>
+      <div class="queue-actions">
+        <button class="btn btn-outline btn-sm" onclick="clearQueue()">Clear All</button>
+        <button class="btn btn-success" id="schedBtn" onclick="scheduleAll()">
+          🚀 Schedule All
+        </button>
+      </div>
+    </div>
+
+    <!-- batch progress -->
+    <div class="progress-wrap hidden" id="batchProgress">
+      <div class="progress-row">
+        <span id="progLabel">Scheduling…</span>
+        <span id="progFrac">0 / 0</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progFill" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div id="postList"></div>
+  </div>
+</div>
+
+<!-- ── Toasts ── -->
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+// ────────────────────────── State ──────────────────────────────────────────
+const S = {
+  apiKey:          localStorage.getItem("postiz_key") || "",
+  integrations:    [],
+  defaultAccounts: new Set(),   // which channels new posts should default to
+  posts:           [],
+  busy:            false,
+  // scheduling mode
+  schedMode:       "cadence",   // "staggered" | "cadence"
+  postsPerDay:     3,
+  cadenceStart:    null,          // Date (midnight local) for cadence start day
+  // Instagram audio — random track auto-picked server-side from assets/insta_audio/
+  instagramAudio: {}
+};
+
+const ICONS = {
+  instagram:"📷", tiktok:"🎵", youtube:"▶️", twitter:"🐦",
+  linkedin:"💼", facebook:"📘", threads:"🧵", pinterest:"📌",
+  bluesky:"🦋", reddit:"🤖", default:"📱"
+};
+const COLORS = {
+  instagram:"#e1306c", tiktok:"#69c9d0", youtube:"#ff0000",
+  twitter:"#1da1f2",   linkedin:"#0a66c2", facebook:"#1877f2",
+  threads:"#aaa",      pinterest:"#e60023", bluesky:"#0085ff",
+  reddit:"#ff4500",    default:"#7c6af7"
+};
+
+// ────────────────────────── Boot ───────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  if (S.apiKey) {
+    document.getElementById("keyInput").value = S.apiKey;
+    connect();
+  }
+  initDrop();
+  initSchedMode();
+});
+
+
+// ────────────────────────── API helpers ────────────────────────────────────
+async function api(method, path, body, isForm) {
+  const headers = { Authorization: S.apiKey };
+  if (!isForm) headers["Content-Type"] = "application/json";
+  const res = await fetch(`/api${path}`, {
+    method,
+    headers,
+    body: body ? (isForm ? body : JSON.stringify(body)) : undefined
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${t.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+// ────────────────────────── Connect ────────────────────────────────────────
+async function connect() {
+  const key = document.getElementById("keyInput").value.trim();
+  if (!key) { toast("Enter your API key first", "fail"); return; }
+  S.apiKey = key;
+  localStorage.setItem("postiz_key", key);
+
+  const btn = document.getElementById("connectBtn");
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin"></span> Connecting…`;
+
+  try {
+    await loadIntegrations();
+    document.getElementById("intCard").classList.remove("hidden");
+    document.getElementById("dropCard").classList.remove("hidden");
+    document.getElementById("schedModeCard").classList.remove("hidden");
+    document.getElementById("instaAudioCard").classList.remove("hidden");
+    toast(`Connected — ${S.integrations.length} account(s) found`, "ok");
+    btn.textContent = "Reconnect";
+  } catch (e) {
+    toast("Connection failed: " + e.message, "fail");
+    btn.textContent = "Connect";
+  }
+  btn.disabled = false;
+}
+
+async function loadIntegrations() {
+  const data = await api("GET", "/integrations");
+  S.integrations = Array.isArray(data)
+    ? data
+    : (data.integrations || data.data || data.results || []);
+
+  // On first load, select ALL channels by default.
+  // On refresh, keep existing selection but add any newly discovered channels.
+  if (S.defaultAccounts.size === 0) {
+    S.integrations.forEach(i => S.defaultAccounts.add(i.id));
+  } else {
+    S.integrations.forEach(i => {
+      // auto-add brand-new integrations as selected
+      if (!S.defaultAccounts.has(i.id) &&
+          !S._knownIntegrationIds?.has(i.id)) {
+        S.defaultAccounts.add(i.id);
+      }
+    });
+  }
+  // remember which IDs we've seen so far
+  S._knownIntegrationIds = new Set(S.integrations.map(i => i.id));
+
+  renderInts();
+  // refresh account chips in any open post cards
+  S.posts && renderQueue();
+}
+
+// ────────────────────────── Render integrations ────────────────────────────
+function renderInts() {
+  const g = document.getElementById("intGrid");
+  if (!S.integrations.length) {
+    g.innerHTML = `<span style="color:var(--muted);font-size:13px">
+      No accounts found — connect social accounts on platform.postiz.com first.</span>`;
+    return;
+  }
+  g.innerHTML = S.integrations.map(i => {
+    const pl  = platform(i);
+    const ic  = ICONS[pl] || ICONS.default;
+    const col = COLORS[pl] || COLORS.default;
+    const sel = S.defaultAccounts.has(i.id);
+    return `<div class="int-chip ${sel ? "active" : ""}" id="intchip-${i.id}"
+                 onclick="toggleDefaultAcc('${i.id}')" title="Click to toggle channel">
+      ${i.picture
+        ? `<img src="${i.picture}" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">`
+        : ""}
+      <span class="pi" style="${i.picture ? "display:none" : ""}">${ic}</span>
+      <div>
+        <div class="int-name">${esc(i.name || i.identifier || "Account")}</div>
+        <div class="int-platform" style="color:${col}"
+             title="identifier: ${esc(i.identifier||'')} | type: ${esc(i.type||'')} | provider: ${esc(i.provider||'')}">${pl || "(unknown)"}</div>
+      </div>
+      <span class="int-check">✓</span>
+    </div>`;
+  }).join("");
+}
+
+// Propagate current defaultAccounts to every pending post and refresh their chips.
+function syncPostsToDefault() {
+  const ids = [...S.defaultAccounts];
+  S.posts.forEach(p => {
+    if (p.status !== "pending" && p.status !== "error") return;
+    p.accounts = [...ids];
+    // Refresh per-post chip visuals without a full re-render
+    S.integrations.forEach(i => {
+      const chip = document.getElementById(`chip-${p.id}-${i.id}`);
+      if (chip) chip.classList.toggle("selected", ids.includes(i.id));
+    });
+  });
+}
+
+function toggleDefaultAcc(intId) {
+  if (S.defaultAccounts.has(intId)) {
+    S.defaultAccounts.delete(intId);
+  } else {
+    S.defaultAccounts.add(intId);
+  }
+  const chip = document.getElementById(`intchip-${intId}`);
+  if (chip) chip.classList.toggle("active", S.defaultAccounts.has(intId));
+  syncPostsToDefault();
+  const count = S.defaultAccounts.size;
+  toast(`${count} channel${count !== 1 ? "s" : ""} selected — all pending posts updated`, count ? "ok" : "");
+}
+
+function selectAllChannels() {
+  S.integrations.forEach(i => {
+    S.defaultAccounts.add(i.id);
+    document.getElementById(`intchip-${i.id}`)?.classList.add("active");
+  });
+  syncPostsToDefault();
+  toast(`All ${S.integrations.length} channels selected — all pending posts updated`, "ok");
+}
+
+function selectNoneChannels() {
+  S.defaultAccounts.clear();
+  S.integrations.forEach(i => {
+    document.getElementById(`intchip-${i.id}`)?.classList.remove("active");
+  });
+  syncPostsToDefault();
+  toast("All channels deselected — pending posts cleared too", "");
+}
+
+function platform(i) {
+  return ((i.identifier || i.type || i.provider || "")).toLowerCase();
+}
+
+// Detect whether a video has an audio track using the browser media API.
+async function videoHasAudio(objectUrl) {
+  return new Promise(resolve => {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.src = objectUrl;
+    const finish = r => { v.src = ""; resolve(r); };
+    v.onloadedmetadata = () => {
+      if (v.audioTracks) finish(v.audioTracks.length > 0);
+      else               finish(true);
+    };
+    v.onerror = () => finish(false);
+    setTimeout(() => finish(true), 4000);
+  });
+}
+
+// Build platform-specific settings.
+// isCarousel = true when posting multiple images (slideshow)
+// isVideo    = true when the post is a video file (not image/carousel)
+function buildSettings(intId, title, needsMusic = false, isCarousel = false, isVideo = false) {
+  const int  = S.integrations.find(i => i.id === intId);
+  const pl   = int ? platform(int) : "";
+
+  // For YouTube Shorts: append #Shorts — reserve 8 chars so it never gets truncated
+  let resolvedTitle = (title || "").slice(0, 92);
+  if (pl.includes("youtube") && isVideo && !resolvedTitle.includes("#Shorts")) {
+    resolvedTitle = (resolvedTitle + " #Shorts").trim();
+  }
+  resolvedTitle = resolvedTitle.slice(0, 100);
+
+  const base = { title: resolvedTitle };
+
+  console.log(`[buildSettings] intId=${intId} platform="${pl}" carousel=${isCarousel} video=${isVideo}`);
+
+  let extra = {};
+
+  if (pl.includes("tiktok")) {
+    extra = {
+      privacy_level:           "PUBLIC_TO_EVERYONE",
+      duet:                    false,
+      stitch:                  false,
+      comment:                 true,
+      autoAddMusic:            needsMusic ? "yes" : "no",
+      brand_content_toggle:    false,
+      brand_organic_toggle:    false,
+      content_posting_method:  "DIRECT_POST"
+    };
+  } else if (pl.includes("youtube")) {
+    // For short vertical videos post as YouTube Shorts explicitly.
+    // youtubeVideoType tells Postiz to use the Shorts upload path.
+    // type is the privacy setting (always "public").
+    extra = {
+      type:             "public",
+      youtubeVideoType: isVideo ? "short" : "video",
+    };
+  } else if (pl.includes("linkedin")) {
+    extra = { privacy_level: "PUBLIC" };
+  } else if (pl.includes("instagram")) {
+    // Instagram carousels require DIRECT_POST (Business/Creator accounts only).
+    // REMINDER mode only supports single images/videos — not carousels.
+    // trial_reel must be false for image posts (it's for video Reels only).
+    extra = {
+      post_type:               "post",
+      content_posting_method:  "DIRECT_POST",
+      trial_reel:              false
+    };
+    // Instagram carousels that fall through to the non-Reel path get no audio
+    // (Instagram API does not support audio on photo carousels).
+    // The Reel path (scheduleAll POST 1) handles audio by embedding music in the MP4.
+  } else if (pl.includes("facebook")) {
+    extra = {};
+  }
+
+  return { ...base, ...extra };
+}
+
+// ────────────────────────── Drop zone ──────────────────────────────────────
+function initDrop() {
+  // ── Video/image drop zone ──
+  const zone = document.getElementById("dropZone");
+  const inp  = document.getElementById("fileInput");
+  zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
+  zone.addEventListener("dragleave", ()=> zone.classList.remove("drag-over"));
+  zone.addEventListener("drop", e => {
+    e.preventDefault(); zone.classList.remove("drag-over");
+    addFiles([...e.dataTransfer.files]);
+  });
+  // Click the whole zone (but not child buttons — they call directly)
+  zone.addEventListener("click", e => {
+    if (e.target === zone || e.target.tagName === "SPAN" || e.target.tagName === "STRONG" || e.target.tagName === "P") {
+      document.getElementById("fileInput").click();
+    }
+  });
+  inp.addEventListener("change", () => { addFiles([...inp.files]); inp.value = ""; });
+
+  // ── Video folder browser (webkitdirectory) ──
+  const videoFolderInput = document.getElementById("videoFolderInput");
+  videoFolderInput.addEventListener("change", () => {
+    handleVideoFolderBrowse(videoFolderInput);
+  });
+
+  // ── Slideshow folder browser (webkitdirectory) ──
+  const folderBrowseInput = document.getElementById("folderBrowseInput");
+  folderBrowseInput.addEventListener("change", () => {
+    handleFolderBrowse(folderBrowseInput);
+  });
+
+  // Allow pressing Enter in the manual path input
+  document.getElementById("folderInput")?.addEventListener("keydown", e => {
+    if (e.key === "Enter") loadSlideshowFromFolder();
+  });
+}
+
+// ────────────────────────── Handle video folder browse ──────────────────────
+function handleVideoFolderBrowse(input) {
+  const allFiles = [...input.files];
+  input.value = "";
+  if (!allFiles.length) return;
+
+  const folderName = allFiles[0].webkitRelativePath.split("/")[0];
+
+  // Accept any video or image file anywhere inside the folder (recursive)
+  const valid = allFiles.filter(f =>
+    f.type.startsWith("video/") || f.type.startsWith("image/")
+  );
+
+  // Reject oversized files early
+  const MAX_MB = 100;
+  const tooBig  = valid.filter(f => f.size > MAX_MB * 1024 * 1024);
+  const ok      = valid.filter(f => f.size <= MAX_MB * 1024 * 1024);
+
+  if (!ok.length) {
+    toast(`No valid video/image files found in "${folderName}"`, "fail");
+    return;
+  }
+
+  // Sort by full relative path so sibling folders come out grouped and ordered
+  ok.sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath, undefined, { numeric: true }));
+
+  const startStep = S.posts.filter(p => p.status === "pending").length;
+  ok.forEach((f, idx) => {
+    S.posts.push({
+      id:       `p${Date.now()}${Math.random().toString(36).slice(2)}`,
+      file:     f,
+      url:      URL.createObjectURL(f),
+      caption:  "",
+      accounts: [...S.defaultAccounts],
+      when:     staggeredDT(startStep + idx),
+      status:   "pending",
+      err:      null
+    });
+  });
+
+  renderQueue();
+  if (S.schedMode === "cadence") applyDailyCadence();
+  toast(`Added ${ok.length} file(s) from "${folderName}"`, "ok");
+
+  if (tooBig.length) {
+    toast(`Skipped ${tooBig.length} file(s) over ${MAX_MB} MB`, "fail");
+  }
+}
+
+// ────────────────────────── Handle folder browse (webkitdirectory) ─────────
+async function handleFolderBrowse(input) {
+  const allFiles = [...input.files];
+  input.value = "";
+  if (!allFiles.length) return;
+
+  const btn = document.getElementById("folderBrowseBtn");
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin"></span> Reading…`;
+
+  try {
+    const IMAGE_RE = /\.(jpg|jpeg|png|gif|webp|avif)$/i;
+    const rootName = allFiles[0].webkitRelativePath.split("/")[0];
+
+    // ── Detect mode using actual path depths ─────────────────────────────────
+    // Single:  root/slides/img.png           → parts[1]=="slides", length==3
+    // Parent:  root/subfolder/slides/img.png → parts[2]=="slides", length==4
+    const isSingle = allFiles.some(f => {
+      const p = f.webkitRelativePath.split("/");
+      return p.length === 3 && p[1].toLowerCase() === "slides" && IMAGE_RE.test(f.name);
+    });
+
+    if (isSingle) {
+      // ── Single slideshow folder ──────────────────────────────────────────
+      // JSON: root/name.json  (length 2)
+      const jsonFile = allFiles.find(f => {
+        const p = f.webkitRelativePath.split("/");
+        return p.length === 2 && f.name.toLowerCase().endsWith(".json");
+      });
+      // Slides: root/slides/img.png  (length 3, parts[1]=="slides")
+      let slides = allFiles.filter(f => {
+        const p = f.webkitRelativePath.split("/");
+        return p.length === 3 && p[1].toLowerCase() === "slides" && IMAGE_RE.test(f.name);
+      });
+      slides.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+      if (slides.length < 2) {
+        toast(`Only ${slides.length} slide(s) found — need at least 2`, "fail"); return;
+      }
+      let meta = {};
+      if (jsonFile) { try { meta = JSON.parse(await jsonFile.text()); } catch(e) {} }
+
+      S.posts.push(makePostFromFiles(rootName, slides, meta, 0));
+      renderQueue();
+      if (S.schedMode === "cadence") applyDailyCadence();
+      toast(`Loaded "${rootName}": ${slides.length} slides`, "ok");
+
+    } else {
+      // ── Parent folder: extract per-subfolder directly from allFiles ──────
+      // Group by the subfolder name (parts[1]), keeping ALL files regardless
+      // of depth so we never accidentally exclude anything.
+      const groups = {};
+      for (const f of allFiles) {
+        const p = f.webkitRelativePath.split("/");
+        // p[0] = root (output_compilations), p[1] = subfolder name
+        if (p.length >= 3) {
+          const sub = p[1];
+          (groups[sub] = groups[sub] || []).push(f);
+        }
+      }
+
+      const subNames = Object.keys(groups).sort();
+      if (!subNames.length) {
+        toast("No subfolders found inside the selected folder", "fail");
+        return;
+      }
+
+      console.log(`[folder] root="${rootName}" subfolders:`, subNames);
+
+      let added = 0;
+      const skippedList = [];  // [{name, count}, …]
+      for (const subName of subNames) {
+        const subFiles = groups[subName];
+
+        // JSON: root/subName/file.json — any depth under subName, just find the .json
+        const jsonFile = subFiles.find(f => {
+          const p = f.webkitRelativePath.split("/");
+          // Direct child: root/subName/name.json  → length 3
+          return p.length === 3 && f.name.toLowerCase().endsWith(".json");
+        });
+
+        // Slides: root/subName/slides/img.* — look for ANY image file whose
+        // grandparent folder is "slides" (p[2]=="slides"), regardless of exact depth
+        let slides = subFiles.filter(f => {
+          const p = f.webkitRelativePath.split("/");
+          // p[0]=root  p[1]=subName  p[2]="slides"  p[3]=filename
+          return p.length >= 4 && p[2].toLowerCase() === "slides" && IMAGE_RE.test(f.name);
+        });
+        slides.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+        console.log(`[folder]   ${subName}: ${slides.length} slides, json=${!!jsonFile}`);
+
+        if (slides.length < 2) {
+          skippedList.push({ name: subName, count: slides.length });
+          continue;
+        }
+
+        let meta = {};
+        if (jsonFile) { try { meta = JSON.parse(await jsonFile.text()); } catch(e) { console.warn(e); } }
+
+        S.posts.push(makePostFromFiles(subName, slides, meta, added));
+        added++;
+      }
+
+      renderQueue();
+      if (S.schedMode === "cadence") applyDailyCadence();
+      if (added) toast(`Queued ${added} slideshow(s) from "${rootName}"`, "ok");
+
+      if (skippedList.length) {
+        // Show a persistent panel listing every skipped folder with its slide count
+        showSkippedPanel(skippedList);
+      }
+    }
+
+  } catch (e) {
+    toast("Failed to read folder: " + e.message, "fail");
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = "Choose Folder";
+}
+
+// ── Show a panel listing every folder that was skipped (< 2 slides) ──────────
+function showSkippedPanel(list) {
+  // Remove any previous skipped panel
+  document.getElementById("skippedPanel")?.remove();
+
+  const rows = list.map(({ name, count }) => `
+    <tr>
+      <td><span class="skipped-name">${esc(name)}</span></td>
+      <td><span class="skipped-count-badge">${count} slide${count === 1 ? "" : "s"}</span></td>
+      <td style="color:var(--muted);font-size:12px">
+        ${count === 0 ? "No slides/ folder found" : "Below minimum (need ≥ 2)"}
+      </td>
+    </tr>`).join("");
+
+  const panel = document.createElement("div");
+  panel.id = "skippedPanel";
+  panel.className = "skipped-panel";
+  panel.innerHTML = `
+    <div class="skipped-panel-title">
+      <strong>⚠ ${list.length} folder${list.length > 1 ? "s" : ""} not queued — insufficient slides</strong>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('skippedPanel').remove()"
+              style="padding:4px 10px;font-size:11px">Dismiss</button>
+    </div>
+    <table class="skipped-table">
+      <thead>
+        <tr>
+          <th style="width:55%">Folder</th>
+          <th>Slides found</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  // Insert after the drop card
+  const dropCard = document.getElementById("dropCard");
+  dropCard.insertAdjacentElement("afterend", panel);
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+// ── Extract caption + title from either JSON format ─────────────────────────
+// New format: { caption, title, slides[], hashtags_str, hashtags[], short_pitch, … }
+// Old format: { hook_caption, recipes[], cta_caption[], theme, … }
+function extractMeta(metadata) {
+  if (!metadata) return { caption: "", title: "" };
+
+  // Resolve hashtag string from whichever field is present
+  const hashtagsStr = (
+    metadata.hashtags_str ||
+    (Array.isArray(metadata.hashtags) ? metadata.hashtags.join(" ") : "")
+  ).trim();
+
+  // New format — caption is already fully assembled
+  if (metadata.caption) {
+    let caption = metadata.caption.trim();
+    // Append hashtags if they're not already present in the caption
+    if (hashtagsStr && !caption.includes(hashtagsStr.slice(0, 15))) {
+      caption = caption + "\n\n" + hashtagsStr;
+    }
+    return {
+      caption,
+      title: (metadata.title || metadata.slug || "").slice(0, 100)
+    };
+  }
+
+  // Old format — build caption from parts
+  const parts = [];
+  if (metadata.hook_caption) parts.push(metadata.hook_caption);
+  if (metadata.recipes?.length) parts.push(metadata.recipes.map(r => r.title).join("\n"));
+  if (metadata.cta_caption?.length) {
+    parts.push(Array.isArray(metadata.cta_caption)
+      ? metadata.cta_caption.join("\n") : metadata.cta_caption);
+  }
+  if (hashtagsStr) parts.push(hashtagsStr);
+  return {
+    caption: parts.join("\n\n").trim(),
+    title:   (metadata.theme || "").slice(0, 100)
+  };
+}
+
+// ── Build a post object from real File objects ───────────────────────────────
+function makePostFromFiles(folderName, slideFiles, metadata, stepIndex) {
+  const { caption, title } = extractMeta(metadata);
+  const when = staggeredDT(stepIndex);
+  return {
+    id:         `p${Date.now()}${Math.random().toString(36).slice(2)}`,
+    slideshow:  true,
+    fromFolder: false,
+    folderPath: folderName,
+    files:      slideFiles,
+    urls:       slideFiles.map(f => URL.createObjectURL(f)),
+    caption,
+    postTitle:  title,
+    accounts:   [...S.defaultAccounts],
+    when,
+    status:     "pending",
+    err:        null
+  };
+}
+
+// ────────────────────────── Load slideshow from folder (manual path) ────────
+async function loadSlideshowFromFolder() {
+  const folderPath = document.getElementById("folderInput").value.trim();
+  if (!folderPath) { toast("Enter a folder path first", "fail"); return; }
+
+  const btn = document.getElementById("loadFolderBtn");
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin"></span>`;
+
+  try {
+    const res = await fetch(`/api/folder?path=${encodeURIComponent(folderPath)}`, {
+      headers: { Authorization: S.apiKey }
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => res.statusText);
+      throw new Error(t.slice(0, 200));
+    }
+    const data = await res.json();
+
+    if (data.mode === "multi") {
+      // ── Parent folder: multiple slideshows ──────────────────────────────
+      const { slideshows, skipped: serverSkipped } = data;
+      if (!slideshows?.length && !serverSkipped?.length)
+        throw new Error("No slideshow subfolders found");
+
+      let added = 0;
+      for (const sw of slideshows || []) {
+        const post = buildSlideshowPostFromPaths(
+          sw.folderName, folderPath + "/" + sw.folderName, sw.slides, sw.metadata, added
+        );
+        S.posts.push(post);
+        added++;
+      }
+      renderQueue();
+      if (S.schedMode === "cadence") applyDailyCadence();
+      if (added) toast(`Queued ${added} slideshow(s) from folder`, "ok");
+
+      // Show skipped panel if any subfolders didn't meet the criteria
+      const skippedList = (serverSkipped || []).map(s => ({ name: s.folderName, count: s.slideCount }));
+      if (skippedList.length) showSkippedPanel(skippedList);
+
+    } else {
+      // ── Single slideshow folder ──────────────────────────────────────────
+      const { slides, metadata } = data;
+      const folderName = folderPath.split("/").pop();
+      if (!slides || slides.length < 2) {
+        showSkippedPanel([{ name: folderName, count: slides?.length || 0 }]);
+        throw new Error(`"${folderName}" has ${slides?.length || 0} slide(s) — need at least 2`);
+      }
+      S.posts.push(buildSlideshowPostFromPaths(folderName, folderPath, slides, metadata, 0));
+      renderQueue();
+      if (S.schedMode === "cadence") applyDailyCadence();
+      toast(`Loaded slideshow: ${slides.length} slides`, "ok");
+    }
+
+    document.getElementById("folderInput").value = "";
+
+  } catch (e) {
+    toast("Failed to load folder: " + e.message, "fail");
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = "Load";
+}
+
+// Helper: build a post object from server-returned disk paths
+function buildSlideshowPostFromPaths(folderName, basePath, slides, metadata, stepIndex) {
+  const { caption, title } = extractMeta(metadata);
+  return {
+    id:         `p${Date.now()}${Math.random().toString(36).slice(2)}`,
+    slideshow:  true,
+    fromFolder: true,
+    folderPath: folderName,
+    files:      slides,
+    urls:       slides.map(s => `/api/file?path=${encodeURIComponent(s.path)}`),
+    caption,
+    postTitle:  title,
+    accounts:   [...S.defaultAccounts],
+    when:       staggeredDT(stepIndex),
+    status:     "pending",
+    err:        null
+  };
+}
+
+function addFiles(files) {
+  const valid = files.filter(f => f.type.startsWith("video/") || f.type.startsWith("image/"));
+  if (!valid.length) { toast("No valid video or image files", "fail"); return; }
+
+  const startStep = S.posts.filter(p => p.status === "pending").length;
+  valid.forEach((f, idx) => {
+    S.posts.push({
+      id:       `p${Date.now()}${Math.random().toString(36).slice(2)}`,
+      file:     f,
+      url:      URL.createObjectURL(f),
+      caption:  "",
+      accounts: [...S.defaultAccounts],
+      when:     staggeredDT(startStep + idx),
+      status:   "pending",
+      err:      null
+    });
+  });
+
+  renderQueue();
+  if (S.schedMode === "cadence") applyDailyCadence();
+  toast(`Added ${valid.length} file(s) to queue`, "ok");
+}
+
+// Format a Date as a local-time string for datetime-local inputs.
+// toISOString() gives UTC which datetime-local misinterprets in non-UTC timezones.
+function localDTStr(d) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// First post: now + 15 min. Each subsequent: +90 min per step.
+function staggeredDT(stepIndex = 0) {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  d.setMinutes(d.getMinutes() + 15 + stepIndex * 90);
+  return localDTStr(d);
+}
+
+function defaultDT() { return staggeredDT(0); }
+
+// ────────────────────────── Daily cadence scheduling ───────────────────────
+// Window: 8 AM EST (UTC-5 = 13:00 UTC) → 8 PM PST (UTC-8 = 04:00 UTC next day)
+// That is a 15-hour (900 min) window.
+// Posts are spread evenly across that window each day.
+// If more posts than postsPerDay, they overflow into subsequent days.
+
+function initSchedMode() {
+  const today = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+  document.getElementById("cadenceStartDate").value = todayStr;
+  S.cadenceStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+}
+
+
+function cadenceChanged() {
+  const ppd = parseInt(document.getElementById("postsPerDay").value) || 3;
+  S.postsPerDay = Math.max(1, Math.min(12, ppd));
+  const dateVal = document.getElementById("cadenceStartDate").value;
+  if (dateVal) {
+    const [y, m, d] = dateVal.split("-").map(Number);
+    S.cadenceStart = new Date(y, m - 1, d);
+  }
+  applyDailyCadence();
+  updateCadencePreview();
+}
+
+// Returns UTC minutes from midnight UTC for slot i of n slots within the daily window.
+// Window: 8 AM EST (13:00 UTC) → 8 PM EST (01:00 UTC next day = 25:00) = 12 hours.
+function cadenceSlotUTCMinutes(i, n) {
+  const WIN_START = 13 * 60;   // 8 AM EST = 13:00 UTC
+  const WIN_END   = 25 * 60;   // 8 PM EST = next-day 01:00 UTC
+  const winLen    = WIN_END - WIN_START;   // 720 minutes = 12 hours
+  if (n === 1) return WIN_START + winLen / 2;   // single post → midpoint
+  return WIN_START + i * winLen / (n - 1);      // spread from start to end
+}
+
+// Return datetime-local string for global post index (0-based across all days).
+function cadenceDT(postIndex) {
+  const ppd  = S.postsPerDay || 3;
+  const day  = Math.floor(postIndex / ppd);
+  const slot = postIndex % ppd;
+
+  // Base date: cadenceStart (midnight local) + day offset
+  const base = S.cadenceStart ? new Date(S.cadenceStart) : new Date();
+  base.setHours(0, 0, 0, 0);
+  base.setDate(base.getDate() + day);
+
+  // Compute UTC midnight of that local date
+  // We use Date.UTC with local year/month/day so the slot offsets are from UTC midnight
+  const utcMidnight = Date.UTC(base.getFullYear(), base.getMonth(), base.getDate());
+  const slotUTCMs   = utcMidnight + cadenceSlotUTCMinutes(slot, ppd) * 60000;
+
+  return localDTStr(new Date(slotUTCMs));
+}
+
+// Reassign scheduled times for all pending/error posts using the cadence.
+function applyDailyCadence() {
+  if (S.schedMode !== "cadence") return;
+  const pending = S.posts.filter(p => p.status === "pending" || p.status === "error");
+  pending.forEach((p, i) => { p.when = cadenceDT(i); });
+  renderQueue();
+  updateCadencePreview();
+}
+
+function updateCadencePreview() {
+  const preview = document.getElementById("cadencePreview");
+  if (!preview) return;
+  const ppd = S.postsPerDay || 3;
+  const pendingCount = S.posts.filter(p => p.status === "pending" || p.status === "error").length;
+  const totalDays = pendingCount ? Math.ceil(pendingCount / ppd) : 2;
+  const showDays  = Math.min(totalDays, 4);
+
+  const lines = [];
+  for (let day = 0; day < showDays; day++) {
+    const slots = [];
+    for (let slot = 0; slot < ppd; slot++) {
+      const dt = new Date(cadenceDT(day * ppd + slot));
+      slots.push(dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }));
+    }
+    const base = S.cadenceStart ? new Date(S.cadenceStart) : new Date();
+    base.setHours(0, 0, 0, 0);
+    base.setDate(base.getDate() + day);
+    const label = day === 0 ? "Today" : day === 1 ? "Tomorrow"
+      : base.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    const postNums = [];
+    for (let s = 0; s < ppd; s++) {
+      const idx = day * ppd + s;
+      if (idx < pendingCount) postNums.push(`Post ${idx + 1}`);
+    }
+    const postHint = postNums.length ? ` <span style="color:var(--accent);font-weight:600">(${postNums.join(", ")})</span>` : "";
+    lines.push(`<div><strong style="color:var(--text)">${label}:</strong> ${slots.join(" · ")}${postHint}</div>`);
+  }
+  if (totalDays > showDays) {
+    lines.push(`<div style="color:var(--muted)">…continuing for ${totalDays - showDays} more day${totalDays - showDays > 1 ? "s" : ""}</div>`);
+  }
+  const note = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);color:var(--muted);font-size:11px">
+    Times shown in your local timezone · Window = 8 AM EST → 8 PM EST (${ppd} slot${ppd>1?"s":""}/day)
+  </div>`;
+  preview.innerHTML = lines.join("") + note;
+}
+
+// ────────────────────────── Render queue ───────────────────────────────────
+function renderQueue() {
+  const wrap = document.getElementById("queueWrap");
+  const list = document.getElementById("postList");
+
+  if (!S.posts.length) { wrap.classList.add("hidden"); return; }
+  wrap.classList.remove("hidden");
+  document.getElementById("qBadge").textContent = S.posts.length;
+
+  list.innerHTML = S.posts.map(p => cardHTML(p)).join("");
+
+  S.posts.forEach(p => {
+    byId(`cap-${p.id}`)?.addEventListener("input", e => { p.caption = e.target.value; });
+    byId(`dt-${p.id}`)?.addEventListener("change", e => { p.when = e.target.value; });
+    byId(`rm-${p.id}`)?.addEventListener("click", () => removePost(p.id));
+    S.integrations.forEach(i => {
+      byId(`chip-${p.id}-${i.id}`)?.addEventListener("click", () => toggleAcc(p, i.id));
+    });
+  });
+}
+
+function toggleAcc(post, intId) {
+  const idx = post.accounts.indexOf(intId);
+  if (idx === -1) post.accounts.push(intId);
+  else            post.accounts.splice(idx, 1);
+  byId(`chip-${post.id}-${intId}`)?.classList.toggle("selected");
+}
+
+function accChipsHTML(p) {
+  return S.integrations.map(i => {
+    const pl  = platform(i);
+    const ic  = ICONS[pl] || ICONS.default;
+    const sel = p.accounts.includes(i.id);
+    const nm  = (i.name || i.identifier || "Account").slice(0, 14);
+    return `<div class="acc-chip ${sel ? "selected" : ""}" id="chip-${p.id}-${i.id}">
+      ${i.picture
+        ? `<img src="${i.picture}" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
+           <span class="spi" style="display:none">${ic}</span>`
+        : `<span class="spi">${ic}</span>`}
+      ${esc(nm)}
+    </div>`;
+  }).join("");
+}
+
+function cardHTML(p) {
+  const editable = p.status === "pending" || p.status === "error";
+  const stClass  = { pending:"", uploading:"st-uploading",
+                     scheduling:"st-scheduling", done:"st-done", error:"st-error" }[p.status] || "";
+
+  // ── Slideshow card ───────────────────────────────────────────────────────
+  if (p.slideshow) {
+    const MAX_PREVIEW = 8;
+    const thumbs = p.urls.slice(0, MAX_PREVIEW).map((u, i) =>
+      `<img class="slide-thumb" src="${u}" title="${esc(p.files[i].name)}">`
+    ).join("");
+    const extra = p.urls.length > MAX_PREVIEW
+      ? `<div class="slide-count">+${p.urls.length - MAX_PREVIEW}</div>` : "";
+    const totalSize = p.files.reduce((s, f) => s + (f.size || 0), 0);
+    const subline   = p.fromFolder
+      ? `📂 ${esc(p.folderPath)}`
+      : `🖼️ ${fmtBytes(totalSize)} total · sorted by filename`;
+
+    return `
+<div class="post-card ${stClass}" id="pc-${p.id}">
+  <div class="card-top">
+    <div class="thumb" style="font-size:22px">🖼️×${p.files.length}</div>
+    <div class="post-info">
+      <div class="post-fname">Slideshow — ${p.files.length} slides${p.postTitle ? ` · ${esc(p.postTitle)}` : ""}${p.files.length > 10 ? ` <span style="background:rgba(240,185,106,.18);color:var(--warn);border-radius:5px;padding:1px 7px;font-size:11px;font-weight:700">⚠ Instagram: first 10 only</span>` : ""}</div>
+      <div class="post-fsize">${subline}</div>
+      <div class="post-status-row" id="sr-${p.id}">${badgeHTML(p)}</div>
+      ${p.err ? `<div style="font-size:12px;color:var(--error);margin-top:4px">⚠ ${esc(p.err)}</div>` : ""}
+    </div>
+    ${editable ? `<button class="btn btn-danger btn-sm" id="rm-${p.id}" title="Remove">✕</button>` : ""}
+  </div>
+  <div class="slide-strip">${thumbs}${extra}</div>
+  ${editable ? `
+  <div class="card-body" style="margin-top:14px">
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+        <div class="field-label" style="margin:0">Caption</div>
+      </div>
+      <textarea class="caption-ta" id="cap-${p.id}" style="min-height:120px"
+        placeholder="Write your caption…">${esc(p.caption)}</textarea>
+    </div>
+    <div>
+      <div class="field-label">Schedule Date &amp; Time</div>
+      <input class="dt-input" type="datetime-local" id="dt-${p.id}"
+             value="${p.when}" min="${localDTStr(new Date())}">
+      <div class="field-label" style="margin-top:14px">Post To</div>
+      <div class="acc-grid">${accChipsHTML(p)}</div>
+    </div>
+  </div>` : `
+  <div style="font-size:13px;color:var(--muted);margin-top:6px">
+    📅 ${fmtDate(p.when)} &nbsp;·&nbsp; ${p.accounts.length} account(s)
+  </div>`}
+</div>`;
+  }
+
+  // ── Regular (single file) card ───────────────────────────────────────────
+  const isVideo = p.file.type.startsWith("video/");
+  return `
+<div class="post-card ${stClass}" id="pc-${p.id}">
+  <div class="card-top">
+    <div class="thumb">
+      ${isVideo
+        ? `<video src="${p.url}" muted playsinline preload="metadata"></video>`
+        : `<img src="${p.url}" alt="">`}
+    </div>
+    <div class="post-info">
+      <div class="post-fname" title="${esc(p.file.name)}">${esc(p.file.name)}</div>
+      <div class="post-fsize">${isVideo ? "🎬" : "🖼️"} ${fmtBytes(p.file.size)}</div>
+      <div class="post-status-row" id="sr-${p.id}">${badgeHTML(p)}</div>
+      ${p.err ? `<div style="font-size:12px;color:var(--error);margin-top:4px">⚠ ${esc(p.err)}</div>` : ""}
+    </div>
+    ${editable ? `<button class="btn btn-danger btn-sm" id="rm-${p.id}" title="Remove">✕</button>` : ""}
+  </div>
+  ${editable ? `
+  <div class="card-body">
+    <div>
+      <div style="margin-bottom:7px">
+        <div class="field-label" style="margin:0">Caption</div>
+      </div>
+      <textarea class="caption-ta" id="cap-${p.id}"
+        placeholder="Write your caption…">${esc(p.caption)}</textarea>
+    </div>
+    <div>
+      <div class="field-label">Schedule Date &amp; Time</div>
+      <input class="dt-input" type="datetime-local" id="dt-${p.id}"
+             value="${p.when}" min="${localDTStr(new Date())}">
+      <div class="field-label" style="margin-top:14px">Post To</div>
+      <div class="acc-grid">${accChipsHTML(p)}</div>
+    </div>
+  </div>` : `
+  <div style="font-size:13px;color:var(--muted);margin-top:4px">
+    📅 ${fmtDate(p.when)} &nbsp;·&nbsp; ${p.accounts.length} account(s)
+  </div>`}
+</div>`;
+}
+
+function badgeHTML(p) {
+  const map = {
+    pending:    `<span class="badge badge-pending">⏳ Ready to schedule</span>`,
+    uploading:  `<span class="badge badge-uploading"><span class="spin"></span> Uploading…</span>`,
+    scheduling: `<span class="badge badge-scheduling"><span class="spin"></span> Scheduling…</span>`,
+    done:       `<span class="badge badge-done">✓ Scheduled</span>`,
+    error:      `<span class="badge badge-error">✕ Failed</span>`,
+  };
+  return map[p.status] || map.pending;
+}
+
+// ────────────────────────── Queue actions ──────────────────────────────────
+function removePost(id) {
+  const p = S.posts.find(x => x.id === id);
+  if (p && !p.fromFolder) {
+    if (p.slideshow) p.urls?.forEach(u => URL.revokeObjectURL(u));
+    else if (p.url)  URL.revokeObjectURL(p.url);
+  }
+  S.posts = S.posts.filter(x => x.id !== id);
+  renderQueue();
+  if (S.schedMode === "cadence") applyDailyCadence();
+}
+
+function clearQueue() {
+  if (S.busy) { toast("Wait for current batch to finish", "fail"); return; }
+  if (!confirm("Clear all posts from the queue?")) return;
+  S.posts.forEach(p => {
+    if (!p.fromFolder) {
+      if (p.slideshow) p.urls?.forEach(u => URL.revokeObjectURL(u));
+      else if (p.url)  URL.revokeObjectURL(p.url);
+    }
+  });
+  S.posts = [];
+  renderQueue();
+}
+
+// ────────────────────────── Schedule all ───────────────────────────────────
+async function scheduleAll() {
+  if (S.busy) return;
+
+  const pending = S.posts.filter(p => p.status === "pending" || p.status === "error");
+  if (!pending.length) { toast("No pending posts to schedule", "fail"); return; }
+
+  // Validate
+  for (const p of pending) {
+    const label = p.slideshow ? `Slideshow (${p.files.length} slides)` : p.file.name;
+    if (!p.accounts.length) { toast(`Select at least one account for: ${label}`, "fail"); return; }
+    if (!p.when)             { toast(`Set a date/time for: ${label}`, "fail"); return; }
+    if (new Date(p.when) <= new Date()) { toast(`Schedule time must be in the future: ${label}`, "fail"); return; }
+  }
+
+  S.busy = true;
+  const btn = document.getElementById("schedBtn");
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin"></span> Scheduling…`;
+
+  const prog   = document.getElementById("batchProgress");
+  const fill   = document.getElementById("progFill");
+  const label  = document.getElementById("progLabel");
+  const frac   = document.getElementById("progFrac");
+  prog.classList.remove("hidden");
+
+  let done = 0;
+  const total = pending.length;
+
+  for (const p of pending) {
+    frac.textContent  = `${done} / ${total}`;
+    fill.style.width  = `${(done / total) * 100}%`;
+    const postLabel = p.slideshow ? `Slideshow (${p.files.length} slides)` : p.file.name;
+    label.textContent = `Uploading: ${postLabel}`;
+
+    try {
+      const MAX_MB = 100;
+      setStatus(p, "uploading");
+      let mediaItems = [];   // images for carousel / non-Instagram accounts
+      let reelMediaItem = null; // single video item for Instagram Reel with audio
+
+      // ── Determine whether Instagram Reel path is needed ─────────────────
+      // Audio on Instagram works only on Reels (video), NOT on photo carousels.
+      // Instagram slideshows are ALWAYS converted to Reels (same automatic
+      // behaviour as TikTok's autoAddMusic) — no user toggle required.
+      const instaAccountIds = p.accounts.filter(id => {
+        const obj = S.integrations.find(i => i.id === id) || {};
+        return platform(obj).includes("instagram");
+      });
+      const otherAccountIds = p.accounts.filter(id => !instaAccountIds.includes(id));
+      const doReelPath = p.slideshow && instaAccountIds.length > 0;
+
+      if (p.slideshow) {
+        const INSTA_MAX = 10;
+        const slidesToUpload = p.files.slice(0, INSTA_MAX);
+        if (p.files.length > INSTA_MAX) {
+          toast(`⚠ ${postLabel}: trimmed to ${INSTA_MAX} slides (Instagram max)`, "");
+        }
+
+        // ── Reel conversion: slides → MP4 → upload for Instagram ─────────
+        // Works for both "Load from Folder" (disk paths) and file-picker (bytes).
+        if (doReelPath) {
+          // Server auto-picks a random track from assets/insta_audio/ — no client input needed
+          label.textContent = `Converting slideshow to Reel…`;
+          try {
+            let reelResp;
+            if (p.fromFolder) {
+              const imagePaths = slidesToUpload.map(f => f.path);
+              reelResp = await api("POST", "/slideshow-to-video", {
+                paths: imagePaths,
+                seconds_per_slide: 3
+              });
+            } else {
+              const fd = new FormData();
+              for (const f of slidesToUpload) fd.append("file", f);
+              fd.append("seconds_per_slide", "3");
+              reelResp = await api("POST", "/slideshow-to-video-upload", fd, true);
+            }
+            label.textContent = `Uploading Reel video…`;
+            const reelUp = await api("POST", "/upload-from-path", { path: reelResp.path });
+            reelMediaItem = { id: reelUp.id, path: reelUp.path };
+            console.log("[instagram reel] uploaded video:", reelMediaItem);
+          } catch (err) {
+            console.warn("[instagram reel] failed, falling back to carousel:", err);
+            toast(`⚠ ${postLabel}: Reel conversion failed — posting as carousel (no audio)`, "");
+          }
+        }
+
+        // ── Carousel upload for non-Instagram accounts + Instagram fallback ──
+        const needCarousel = otherAccountIds.length > 0 ||
+                             (instaAccountIds.length > 0 && !reelMediaItem);
+        if (needCarousel) {
+          for (let i = 0; i < slidesToUpload.length; i++) {
+            label.textContent = `Uploading slide ${i + 1}/${slidesToUpload.length}…`;
+            let up;
+            if (p.fromFolder) {
+              up = await api("POST", "/upload-from-path", { path: slidesToUpload[i].path });
+            } else {
+              const fd = new FormData();
+              fd.append("file", slidesToUpload[i]);
+              up = await api("POST", "/upload", fd, true);
+            }
+            mediaItems.push({ id: up.id, path: up.path });
+          }
+        }
+      } else {
+        if (p.file.size > MAX_MB * 1024 * 1024) {
+          throw new Error(`File is ${fmtBytes(p.file.size)} — Postiz rejects uploads over ${MAX_MB} MB. Please compress the video first.`);
+        }
+        const fd = new FormData();
+        fd.append("file", p.file);
+        const up = await api("POST", "/upload", fd, true);
+        mediaItems.push({ id: up.id, path: up.path });
+      }
+
+      label.textContent = `Scheduling: ${postLabel}`;
+      setStatus(p, "scheduling");
+
+      const rawTitle = p.slideshow
+        ? (p.postTitle || "Slideshow")
+        : (p.postTitle || cleanVideoTitle(p.file.name) || p.caption || p.file.name);
+      const title = rawTitle.slice(0, 100);
+      const isCarousel = p.slideshow && mediaItems.length > 1;
+      const isVideo    = !p.slideshow && p.file?.type?.startsWith("video/");
+      const needsMusic = p.slideshow
+        ? true
+        : (p.file.type.startsWith("image/") || !(await videoHasAudio(p.url)));
+
+      const isoDate = new Date(p.when).toISOString();
+
+      // ── POST 1: Instagram Reel ────────────────────────────────────────
+      // Audio is already baked into the MP4 by ffmpeg (random track from assets/insta_audio/).
+      // No audio_name / autoAddMusic needed — the file IS the audio source.
+      if (reelMediaItem && instaAccountIds.length > 0) {
+        const reelSettings = {
+          post_type:              "post",   // Postiz only accepts "post" or "story"
+          content_posting_method: "DIRECT_POST",
+          trial_reel:             false,
+          title:                  title,
+        };
+        console.log(`[instagram reel] scheduling ${instaAccountIds.length} account(s), settings:`, reelSettings);
+        await api("POST", "/posts", {
+          type: "schedule",
+          date: isoDate,
+          shortLink: false,
+          tags: [],
+          posts: instaAccountIds.map(intId => ({
+            integration: { id: intId },
+            value: [{ content: p.caption, image: [reelMediaItem] }],
+            settings: reelSettings,
+          })),
+        });
+      }
+
+      // ── POST 2: other platforms + Instagram carousel fallback ─────────
+      const accountsForCarousel = [
+        ...otherAccountIds,
+        ...(instaAccountIds.length > 0 && !reelMediaItem ? instaAccountIds : []),
+      ];
+      if (accountsForCarousel.length > 0) {
+        await api("POST", "/posts", {
+          type: "schedule",
+          date: isoDate,
+          shortLink: false,
+          tags: [],
+          posts: accountsForCarousel.map(intId => {
+            const intObj = S.integrations.find(i => i.id === intId) || {};
+            const pl_    = platform(intObj);
+            let content  = p.caption;
+            if (pl_.includes("youtube") && isVideo && !content.includes("#Shorts")) {
+              content = (content + "\n\n#Shorts").trim();
+            }
+            return {
+              integration: { id: intId },
+              value: [{ content, image: mediaItems }],
+              settings: buildSettings(intId, title, needsMusic, isCarousel, isVideo)
+            };
+          })
+        });
+      }
+
+      setStatus(p, "done");
+      done++;
+      toast(`✓ Scheduled: ${postLabel}`, "ok");
+
+    } catch (e) {
+      p.err = e.message;
+      setStatus(p, "error");
+      toast(`Failed: ${postLabel}`, "fail");
+    }
+
+    renderQueue();
+  }
+
+  frac.textContent  = `${done} / ${total}`;
+  fill.style.width  = "100%";
+  label.textContent = done === total ? "✓ All posts scheduled!" : `Done — ${done}/${total} succeeded`;
+
+  S.busy = false;
+  btn.disabled = false;
+  btn.textContent = "🚀 Schedule All";
+  setTimeout(() => prog.classList.add("hidden"), 4000);
+
+  toast(
+    done === total
+      ? `All ${done} post(s) scheduled successfully!`
+      : `${done}/${total} posts scheduled (${total - done} failed)`,
+    done === total ? "ok" : "fail"
+  );
+}
+
+function setStatus(p, st) {
+  p.status = st;
+  const sr = byId(`sr-${p.id}`);
+  if (sr) sr.innerHTML = badgeHTML(p);
+  const card = byId(`pc-${p.id}`);
+  if (card) {
+    card.className = `post-card ${{
+      uploading:"st-uploading", scheduling:"st-scheduling",
+      done:"st-done", error:"st-error"
+    }[st] || ""}`;
+  }
+}
+
+// ────────────────────────── Utilities ──────────────────────────────────────
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function byId(id) { return document.getElementById(id); }
+function fmtBytes(b) {
+  if (b < 1024)     return b + " B";
+  if (b < 1048576)  return (b/1024).toFixed(1) + " KB";
+  return (b/1048576).toFixed(1) + " MB";
+}
+// Extract a clean human title from a video filename.
+// "grill_#recipe_1778212134827.mp4" → "grill #recipe"
+// Steps: strip extension → remove trailing numeric timestamp → underscores to spaces → trim
+function cleanVideoTitle(filename) {
+  let name = filename.replace(/\.[^.]+$/, "");        // strip extension
+  name = name.replace(/_[0-9a-f]{6,12}$/i, "");      // remove trailing _hexhash  (e.g. _be73417f)
+  name = name.replace(/_\d{8,}/g, "");               // remove any _longNumber anywhere (timestamps like _1778212134827)
+  name = name.replace(/_/g, " ").trim();              // underscores → spaces
+  return name;
+}
+
+function fmtDate(s) {
+  if (!s) return "—";
+  return new Date(s).toLocaleString(undefined, {
+    month:"short", day:"numeric", year:"numeric",
+    hour:"2-digit", minute:"2-digit"
+  });
+}
+
+// ────────────────────────── Toasts ─────────────────────────────────────────
+function toast(msg, type = "") {
+  const wrap = document.getElementById("toasts");
+  const el   = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span style="font-size:16px">${type==="ok"?"✓":type==="fail"?"✕":"ℹ"}</span>
+                  <span>${esc(msg)}</span>`;
+  wrap.appendChild(el);
+  setTimeout(() => {
+    el.classList.add("bye");
+    setTimeout(() => el.remove(), 300);
+  }, 3800);
+}
+
+
+// ── Read a File as base64 (strip data-URL prefix) ──────────────────────────
+function fileToBase64Strip(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result.replace(/^data:[^;]+;base64,/, ""));
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function blobToBase64Strip(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result.replace(/^data:[^;]+;base64,/, ""));
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+// ── Extract a JPEG frame from a video at ~1 s (or midpoint) ────────────────
+function extractVideoFrame(videoUrl) {
+  return new Promise(resolve => {
+    const v = document.createElement("video");
+    v.src = videoUrl; v.muted = true; v.playsInline = true;
+    const done = result => { v.src = ""; resolve(result); };
+    v.onloadeddata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 2); };
+    v.onseeked = () => {
+      try {
+        const MAX = 1024;
+        const sc  = Math.min(1, MAX / Math.max(v.videoWidth || 640, v.videoHeight || 480));
+        const c   = document.createElement("canvas");
+        c.width   = Math.round((v.videoWidth  || 640) * sc);
+        c.height  = Math.round((v.videoHeight || 480) * sc);
+        c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+        done(c.toDataURL("image/jpeg", 0.82).replace(/^data:[^;]+;base64,/, ""));
+      } catch(e) { done(null); }
+    };
+    v.onerror = () => done(null);
+    setTimeout(() => done(null), 8000);
+  });
+}
+
+// ────────────────────────── Video Stitch UI ────────────────────────────────
+
+const STITCH = {
+  sourceFiles: [],   // File[] from browser picker
+  ctaFile:     null, // File from browser picker
+};
+
+// ── Source selection ─────────────────────────────────────────────────────────
+function stitchSourceFilesChosen(input) {
+  const files = [...input.files].filter(f => f.type.startsWith("video/"));
+  if (!files.length) return;
+  STITCH.sourceFiles = files;
+  document.getElementById("stitchFolderPath").value = "";
+  stitchRenderSourceList();
+  input.value = "";
+}
+
+function stitchSourceFolderChosen(input) {
+  const files = [...input.files].filter(f => f.type.startsWith("video/"));
+  if (!files.length) { toast("No video files found in that folder", "fail"); return; }
+  STITCH.sourceFiles = files;
+  document.getElementById("stitchFolderPath").value = "";
+  stitchRenderSourceList();
+  input.value = "";
+}
+
+function stitchClearSource() {
+  STITCH.sourceFiles = [];
+  stitchRenderSourceList();
+}
+
+function stitchRenderSourceList() {
+  const el = document.getElementById("stitchSourceList");
+  if (!STITCH.sourceFiles.length) {
+    el.innerHTML = `<span style="color:var(--muted)">No files selected</span>`;
+    return;
+  }
+  const total = STITCH.sourceFiles.reduce((s, f) => s + f.size, 0);
+  el.innerHTML =
+    `<div style="color:var(--accent);font-weight:600;margin-bottom:6px">
+       ${STITCH.sourceFiles.length} video${STITCH.sourceFiles.length > 1 ? "s" : ""} selected
+       · ${fmtBytes(total)} total
+     </div>` +
+    STITCH.sourceFiles.map(f =>
+      `<div style="display:flex;justify-content:space-between;padding:2px 0;
+                   border-bottom:1px solid var(--border)">
+         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+                      max-width:70%;color:var(--text)">${esc(f.name)}</span>
+         <span style="color:var(--muted);white-space:nowrap;margin-left:8px">${fmtBytes(f.size)}</span>
+       </div>`
+    ).join("");
+}
+
+// ── CTA selection ─────────────────────────────────────────────────────────────
+function stitchCtaFileChosen(input) {
+  const file = input.files[0];
+  if (!file) return;
+  STITCH.ctaFile = file;
+  document.getElementById("stitchCtaName").textContent = file.name;
+  document.getElementById("stitchCtaName").title       = file.name;
+  document.getElementById("stitchCtaUrl").value        = "";
+  input.value = "";
+}
+
+function stitchClearCta() {
+  STITCH.ctaFile = null;
+  document.getElementById("stitchCtaName").textContent = "No file chosen";
+}
+
+// ── Main stitch runner ────────────────────────────────────────────────────────
+async function runStitch() {
+  const btn       = document.getElementById("stitchBtn");
+  const progWrap  = document.getElementById("stitchProgress");
+  const progLabel = document.getElementById("stitchProgLabel");
+  const progFrac  = document.getElementById("stitchProgFrac");
+  const progFill  = document.getElementById("stitchProgFill");
+  const resultsEl = document.getElementById("stitchResults");
+  const errorEl   = document.getElementById("stitchError");
+  const srcSec    = parseFloat(document.getElementById("stitchSecRange").value) || 5;
+
+  resultsEl.style.display = "none";
+  errorEl.style.display   = "none";
+
+  const folderPath   = document.getElementById("stitchFolderPath").value.trim();
+  const ctaUrl       = document.getElementById("stitchCtaUrl").value.trim();
+  const hasFiles     = STITCH.sourceFiles.length > 0;
+  const hasFolderPath = !!folderPath;
+  const hasCtaFile   = !!STITCH.ctaFile;
+  const hasCtaUrl    = !!ctaUrl;
+
+  // Validate source
+  if (!hasFiles && !hasFolderPath) {
+    errorEl.textContent   = "⚠ Select source video file(s) / folder, or enter a disk folder path.";
+    errorEl.style.display = "block"; return;
+  }
+  // Validate CTA
+  if (!hasCtaFile && !hasCtaUrl) {
+    errorEl.textContent   = "⚠ Choose a CTA video file or paste a URL / disk path.";
+    errorEl.style.display = "block"; return;
+  }
+  // File mode: CTA must also be a file (can't mix upload + URL)
+  if (hasFiles && !hasCtaFile) {
+    errorEl.textContent   = "⚠ When uploading source files, the CTA must also be a file (not a URL).";
+    errorEl.style.display = "block"; return;
+  }
+
+  btn.disabled          = true;
+  btn.innerHTML         = `<span class="spin"></span> Stitching…`;
+  progWrap.style.display = "block";
+  progFill.style.width   = "0%";
+
+  const totalCount = hasFiles ? STITCH.sourceFiles.length : "?";
+  progLabel.textContent = `Stitching… (${totalCount} video${totalCount === 1 ? "" : "s"})`;
+  progFrac.textContent  = "";
+
+  // Animate indeterminate bar while waiting for server
+  let animFrame;
+  let pseudo = 0;
+  function animBar() {
+    pseudo = (pseudo + 0.8) % 100;
+    progFill.style.width = `${Math.min(pseudo, 90)}%`;
+    animFrame = requestAnimationFrame(animBar);
+  }
+  animFrame = requestAnimationFrame(animBar);
+
+  try {
+    let res;
+
+    if (hasFiles) {
+      // ── Multipart: all source files + CTA uploaded ──
+      const fd = new FormData();
+      STITCH.sourceFiles.forEach(f => fd.append("source", f));
+      fd.append("cta",            STITCH.ctaFile);
+      fd.append("source_seconds", srcSec);
+      res = await fetch("/api/stitch-videos", { method: "POST", body: fd });
+    } else {
+      // ── JSON: folder path on disk + CTA URL/path ──
+      const body = {
+        folder_path:    folderPath,
+        source_seconds: srcSec,
+      };
+      if (hasCtaUrl) body.cta_url  = ctaUrl;
+      else           body.cta_path = ctaUrl; // treat as path if starts with /
+      res = await fetch("/api/stitch-videos", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(body)
+      });
+    }
+
+    cancelAnimationFrame(animFrame);
+
+    if (!res.ok) {
+      const t = await res.text().catch(() => res.statusText);
+      let msg = t;
+      try { msg = JSON.parse(t).error || t; } catch (_) {}
+      throw new Error(msg.slice(0, 300));
+    }
+
+    const data = await res.json();
+    progFill.style.width  = "100%";
+    progFrac.textContent  = `${data.succeeded}/${data.total}`;
+    progLabel.textContent = data.succeeded === data.total
+      ? `✓ All ${data.total} videos stitched!`
+      : `Done — ${data.succeeded}/${data.total} succeeded`;
+
+    stitchRenderResults(data);
+    toast(`🎬 Stitch done — ${data.succeeded}/${data.total} videos ready`, "ok");
+
+  } catch (e) {
+    cancelAnimationFrame(animFrame);
+    errorEl.textContent   = "⚠ " + e.message;
+    errorEl.style.display = "block";
+    toast("Stitch failed: " + e.message, "fail");
+    progWrap.style.display = "none";
+  }
+
+  btn.disabled  = false;
+  btn.innerHTML = "🎬 Stitch All";
+}
+
+function stitchRenderResults(data) {
+  const resultsEl  = document.getElementById("stitchResults");
+  const listEl     = document.getElementById("stitchResultsList");
+  const titleEl    = document.getElementById("stitchResultsTitle");
+  const zipLinkEl  = document.getElementById("stitchZipLink");
+
+  const ok      = (data.results || []).filter(r => r.ok);
+  const failed  = (data.results || []).filter(r => !r.ok);
+
+  titleEl.textContent = `✓ ${ok.length} of ${data.total} video${data.total > 1 ? "s" : ""} stitched`;
+  titleEl.style.color = failed.length ? "var(--warn)" : "var(--success)";
+
+  // ZIP button
+  if (data.zip_url && ok.length > 1) {
+    zipLinkEl.href          = data.zip_url;
+    zipLinkEl.style.display = "inline-flex";
+  } else {
+    zipLinkEl.style.display = "none";
+  }
+
+  listEl.innerHTML = (data.results || []).map(r => {
+    if (r.ok) {
+      return `
+<div style="display:flex;align-items:center;justify-content:space-between;
+            padding:10px 12px;background:var(--card2);border-radius:8px;
+            border:1px solid var(--border);gap:12px">
+  <div style="overflow:hidden">
+    <div style="font-size:12px;font-weight:600;color:var(--text);
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</div>
+    <div style="font-size:11px;color:var(--muted);word-break:break-all;margin-top:2px">${esc(r.stitched_filepath)}</div>
+  </div>
+  <a href="${esc(r.download_url)}" class="btn btn-success btn-sm"
+     download="${esc(r.filename)}" style="white-space:nowrap;flex-shrink:0">⬇ Download</a>
+</div>`;
+    } else {
+      return `
+<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
+            background:rgba(240,106,138,.08);border-radius:8px;
+            border:1px solid rgba(240,106,138,.3)">
+  <span style="font-size:18px">✕</span>
+  <div>
+    <div style="font-size:12px;font-weight:600;color:var(--error)">${esc(r.label)}</div>
+    <div style="font-size:11px;color:var(--muted)">${esc(r.error || "Unknown error")}</div>
+  </div>
+</div>`;
+    }
+  }).join("");
+
+  resultsEl.style.display = "block";
+  resultsEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+// ────────────────────────── Instagram audio ───────────────────────────────
+// Fully automatic — server picks a random track from assets/insta_audio/
+// for each Reel. No client-side state needed.
+
+// Expose for inline onclick / global use
+window.connect                     = connect;
+window.loadIntegrations            = loadIntegrations;
+window.loadSlideshowFromFolder     = loadSlideshowFromFolder;
+window.handleVideoFolderBrowse     = handleVideoFolderBrowse;
+window.handleFolderBrowse          = handleFolderBrowse;
+window.makePostFromFiles           = makePostFromFiles;
+window.buildSlideshowPostFromPaths = buildSlideshowPostFromPaths;
+window.scheduleAll                 = scheduleAll;
+window.clearQueue                  = clearQueue;
+window.toggleDefaultAcc            = toggleDefaultAcc;
+window.selectAllChannels           = selectAllChannels;
+window.selectNoneChannels          = selectNoneChannels;
+window.syncPostsToDefault          = syncPostsToDefault;
+window.runStitch                   = runStitch;
+window.stitchSourceFilesChosen     = stitchSourceFilesChosen;
+window.stitchSourceFolderChosen    = stitchSourceFolderChosen;
+window.stitchCtaFileChosen         = stitchCtaFileChosen;
+window.stitchClearSource           = stitchClearSource;
+window.stitchClearCta              = stitchClearCta;
+window.stitchRenderResults         = stitchRenderResults;
+</script>
+</body>
+</html>

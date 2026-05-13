@@ -1,0 +1,57 @@
+# 50 high-converting recipes — mix of trending/viral, comfort food, high-protein meal prep, healthy, and treats.
+# All distinct from the 11 already in /output. Run with: python3 pipeline/run.py --briefs briefs_50.txt
+# ============== TRENDING / VIRAL ==============
+cottage cheese ice cream with berries
+dense bean salad meal prep
+frozen yogurt bark with granola
+chopped italian sandwich
+chocolate baked oats
+smashed cucumber salad
+marry me chicken
+pickle brine fried chicken sandwich
+homemade crunchwrap supreme
+birria tacos with consomme
+big mac salad bowl
+viral tiktok ramen noodles
+cheesy pull apart garlic bread
+honey butter cornbread skillet
+lemon orzo soup
+# ============== HIGH-PROTEIN MEAL PREP ==============
+greek chicken meal prep bowl
+tuna pasta salad
+chicken fajita rice bowl
+steak salad with chimichurri
+salmon teriyaki bowl
+mediterranean tuna pita pocket
+grilled chicken rice plate
+egg roll in a bowl
+lemon pepper chicken with rice
+chicken shawarma plate
+# ============== COMFORT FOOD ==============
+one pan creamy garlic chicken
+beef stroganoff over noodles
+pesto pasta with grilled chicken
+cajun shrimp pasta
+honey garlic chicken thighs
+mac and cheese with crispy bacon
+loaded baked potato with toppings
+turkey sloppy joes
+chicken pot pie
+beef chili with cornbread
+# ============== HEALTHY / LOW-CAL ==============
+zucchini noodle alfredo
+cauliflower fried rice
+baked eggplant parmesan
+spaghetti squash bolognese
+turkey lettuce wrap tacos
+thai cucumber salad with peanuts
+roasted veggie quinoa bowl
+chickpea smash sandwich
+hearty cabbage soup
+lemon herb shrimp skewers
+# ============== TREATS / DRINKS ==============
+strawberry matcha latte
+no-bake chocolate peanut butter cups
+banana nice cream
+berry chia pudding
+mango sticky rice
