@@ -1579,6 +1579,239 @@ async def api_slideshow_to_video_upload(request: Request):
 # =============================================================================
 
 
+@app.post("/api/add-audio-to-video")
+async def api_add_audio_to_video(request: Request):
+    """Embed a random background track into a video that has no audio.
+
+    Accepts either:
+      • multipart/form-data  — field "file" = video bytes
+      • application/json     — { "path": "/abs/path/to/video.mp4" }
+
+    In both cases the server checks for an existing audio stream via ffprobe.
+    If the video already has audio it is returned as-is (no re-encode).
+    If not, a random track from assets/insta_audio/ is looped and mixed in.
+
+    Returns: { "path": "/abs/path/to/processed.mp4" }
+    The caller should then POST that path to /api/upload-from-path.
+    """
+    ct = request.headers.get("Content-Type", "")
+    tmp_dir = _tempfile.mkdtemp(prefix="tiktok_audio_")
+    try:
+        # ── resolve input video to a local file path ──────────────────
+        if "multipart/form-data" in ct:
+            # Use FastAPI's native form parser (python-multipart) — handles
+            # large video files correctly without loading into RAM all at once.
+            form     = await request.form()
+            upload   = form.get("file")
+            if upload is None:
+                raise HTTPException(400, "No file field in multipart")
+            # Preserve original extension so ffprobe/ffmpeg detect format
+            orig_name = getattr(upload, "filename", None) or "input.mp4"
+            vid_path  = os.path.join(tmp_dir, orig_name)
+            with open(vid_path, "wb") as fh:
+                fh.write(await upload.read())
+        else:
+            body     = await request.json()
+            vid_path = body.get("path", "").strip()
+            if not vid_path or not os.path.isfile(vid_path):
+                raise HTTPException(400, f"Video file not found: {vid_path}")
+
+        # ── check if video already has an audio stream via ffprobe ──────
+        probe = _subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=codec_name",
+             "-of", "default=noprint_wrappers=1:nokey=1", vid_path],
+            capture_output=True, text=True,
+        )
+        had_audio = bool(probe.stdout.strip())
+        print(f"[audio] {os.path.basename(vid_path)}: had_audio={had_audio}")
+        if had_audio:
+            # Video already has audio — return as-is, no processing needed
+            return {"path": vid_path, "had_audio": True, "track": None}
+
+        # ── pick a random background track ────────────────────────────
+        audio_path = _pick_random_insta_audio()
+        if not audio_path:
+            raise HTTPException(500, "No audio tracks found in assets/insta_audio/")
+
+        # ── get video duration so audio is trimmed exactly ────────────
+        dur_probe = _subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", vid_path],
+            capture_output=True, text=True,
+        )
+        try:
+            duration = float(dur_probe.stdout.strip())
+        except (ValueError, AttributeError):
+            duration = 0
+
+        out_name = "tiktok_audio_" + os.path.basename(vid_path)
+        out_path = os.path.join(STITCH_OUTPUT_DIR, out_name)
+        os.makedirs(STITCH_OUTPUT_DIR, exist_ok=True)
+
+        # ── mix audio into video (-c:v copy = no video re-encode) ─────
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", vid_path,
+            "-stream_loop", "-1", "-i", audio_path,
+            "-map", "0:v:0", "-map", "1:a:0",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k",
+            *([ "-t", str(duration)] if duration > 0 else ["-shortest"]),
+            "-movflags", "+faststart",
+            out_path,
+        ]
+        result = _subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg audio-mix failed:\n{result.stderr[-600:]}")
+
+        print(f"[audio] ✓ embedded {os.path.basename(audio_path)} → {os.path.basename(out_path)}")
+        return {"path": out_path, "had_audio": had_audio, "track": os.path.basename(audio_path)}
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+    finally:
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@app.post("/api/upload-tiktok-video")
+async def api_upload_tiktok_video(request: Request):
+    """Receive a video file, embed audio if missing, upload to Postiz in one step.
+
+    Accepts multipart/form-data:
+        file  — video file (mp4/mov etc.)
+
+    Returns the Postiz upload response: { "id": "...", "path": "..." }
+    """
+    auth = request.headers.get("Authorization", "")
+    ct   = request.headers.get("Content-Type", "")
+
+    if "multipart/form-data" not in ct:
+        raise HTTPException(400, "Expected multipart/form-data")
+
+    form   = await request.form()
+    upload = form.get("file")
+    if upload is None:
+        raise HTTPException(400, "No file field")
+
+    orig_name = getattr(upload, "filename", None) or "video.mp4"
+    video_bytes = await upload.read()
+    print(f"[tiktok-upload] received {orig_name} ({len(video_bytes)//1024} KB)")
+
+    tmp_dir = _tempfile.mkdtemp(prefix="tiktok_upload_")
+    try:
+        vid_path = os.path.join(tmp_dir, orig_name)
+        with open(vid_path, "wb") as fh:
+            fh.write(video_bytes)
+
+        # ── Step 1: does the video have an audio stream at all? ──────
+        probe = _subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=codec_name",
+             "-of", "default=noprint_wrappers=1:nokey=1", vid_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        has_audio_stream = bool(probe.stdout.strip())
+        print(f"[tiktok-upload] {orig_name}: has_audio_stream={has_audio_stream}")
+
+        # ── Step 2: if stream exists, check whether it has real volume ─
+        # volumedetect reports max_volume in dBFS; anything below -90 dBFS
+        # is effectively silence (empty AAC track cameras write by default).
+        is_silent = False
+        if has_audio_stream:
+            vol_result = _subprocess.run(
+                ["ffmpeg", "-i", vid_path, "-af", "volumedetect",
+                 "-f", "null", "/dev/null"],
+                capture_output=True, text=True, timeout=60,
+            )
+            # Parse "max_volume: -91.0 dBFS" from stderr
+            import re as _re
+            m = _re.search(r"max_volume:\s*([-\d.]+)\s*dBFS", vol_result.stderr)
+            if m:
+                max_vol = float(m.group(1))
+                is_silent = max_vol < -90.0
+                print(f"[tiktok-upload] max_volume={max_vol} dBFS → is_silent={is_silent}")
+            else:
+                # Could not parse — assume silent to be safe
+                is_silent = True
+                print("[tiktok-upload] could not parse volumedetect output → treating as silent")
+
+        needs_audio = (not has_audio_stream) or is_silent
+        print(f"[tiktok-upload] needs_audio={needs_audio}")
+
+        upload_path = vid_path  # fallback: upload original if ffmpeg fails or no track found
+
+        if needs_audio:
+            audio_path = _pick_random_insta_audio()
+            if not audio_path:
+                print("[tiktok-upload] WARNING: no tracks in assets/insta_audio/, uploading without audio")
+            else:
+                dur_probe = _subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1:nokey=1", vid_path],
+                    capture_output=True, text=True, timeout=30,
+                )
+                try:
+                    duration = float(dur_probe.stdout.strip())
+                except (ValueError, AttributeError):
+                    duration = 0
+
+                out_path = os.path.join(tmp_dir, "audio_" + orig_name)
+                # Replace video audio (or add if absent) with background track
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", vid_path,
+                    "-stream_loop", "-1", "-i", audio_path,
+                    "-map", "0:v:0", "-map", "1:a:0",
+                    "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "192k",
+                    *([ "-t", str(duration)] if duration > 0 else ["-shortest"]),
+                    "-movflags", "+faststart",
+                    out_path,
+                ]
+                result = _subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                if result.returncode == 0:
+                    upload_path = out_path
+                    print(f"[tiktok-upload] ✓ replaced/added audio: {os.path.basename(audio_path)}")
+                else:
+                    print(f"[tiktok-upload] ffmpeg failed:\n{result.stderr[-400:]}")
+        else:
+            print(f"[tiktok-upload] video has real audio — uploading as-is")
+
+        # ── upload processed (or original) video to Postiz ───────────
+        filename  = os.path.basename(upload_path)
+        mime_type = _mimetypes.guess_type(upload_path)[0] or "video/mp4"
+        with open(upload_path, "rb") as fh:
+            file_data = fh.read()
+
+        print(f"[tiktok-upload] uploading {filename} ({len(file_data)//1024} KB) to Postiz")
+        boundary  = uuid.uuid4().hex
+        part_head = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            f"Content-Type: {mime_type}\r\n\r\n"
+        ).encode()
+        part_tail = f"\r\n--{boundary}--\r\n".encode()
+        return _postiz_proxy_post(
+            "/upload", auth,
+            part_head + file_data + part_tail,
+            f"multipart/form-data; boundary={boundary}",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+    finally:
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC, "index.html"))

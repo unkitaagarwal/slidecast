@@ -976,14 +976,19 @@ function buildSettings(intId, title, needsMusic = false, isCarousel = false, isV
   let extra = {};
 
   if (pl.includes("tiktok")) {
+    // autoAddMusic is always "yes" — same behaviour for videos as for slideshows.
+    // needsMusic was previously gated on videoHasAudio() which is unreliable in
+    // browsers; TikTok's API handles the case where audio already exists gracefully.
     extra = {
+      __type:                  "tiktok",
       privacy_level:           "PUBLIC_TO_EVERYONE",
       duet:                    false,
       stitch:                  false,
       comment:                 true,
-      autoAddMusic:            needsMusic ? "yes" : "no",
+      autoAddMusic:            "yes",
       brand_content_toggle:    false,
       brand_organic_toggle:    false,
+      video_made_with_ai:      false,
       content_posting_method:  "DIRECT_POST"
     };
   } else if (pl.includes("youtube")) {
@@ -1833,10 +1838,53 @@ async function scheduleAll() {
         if (p.file.size > MAX_MB * 1024 * 1024) {
           throw new Error(`File is ${fmtBytes(p.file.size)} — Postiz rejects uploads over ${MAX_MB} MB. Please compress the video first.`);
         }
-        const fd = new FormData();
-        fd.append("file", p.file);
-        const up = await api("POST", "/upload", fd, true);
-        mediaItems.push({ id: up.id, path: up.path });
+
+        const isVideoFile = p.file?.type?.startsWith("video/");
+        const isImageFile = p.file?.type?.startsWith("image/");
+        const hasTikTok   = p.accounts.some(id => {
+          const obj = S.integrations.find(i => i.id === id) || {};
+          return platform(obj).includes("tiktok");
+        });
+
+        // ── Audio pre-processing ───────────────────────────────────────
+        // TikTok: silent / no-audio videos are handled server-side (ffprobe +
+        // ffmpeg + random track from assets/insta_audio/), same idea as
+        // slideshow→Reel — then POST /upload-tiktok-video proxies to Postiz.
+        // buildSettings still sets autoAddMusic:"yes" for TikTok when the API
+        // expects it; the file itself carries real audio after processing.
+        //
+        // Instagram single image → convert to 5s Reel with embedded audio.
+        let uploadFile = p.file;
+
+        if (isImageFile && instaAccountIds.length > 0) {
+          // Single image for Instagram → convert to 5s Reel with audio
+          label.textContent = `Converting image to Reel…`;
+          try {
+            const fd2 = new FormData();
+            fd2.append("file", p.file);
+            fd2.append("seconds_per_slide", "5");
+            const reelResp = await api("POST", "/slideshow-to-video-upload", fd2, true);
+            console.log(`[insta] image → reel: ${reelResp.path}`);
+            const up = await api("POST", "/upload-from-path", { path: reelResp.path });
+            mediaItems.push({ id: up.id, path: up.path });
+            uploadFile = null;
+          } catch (err) {
+            console.warn("[insta] image-to-reel failed, uploading original:", err);
+          }
+        }
+
+        if (uploadFile) {
+          const fd = new FormData();
+          fd.append("file", uploadFile);
+          let up;
+          if (isVideoFile && hasTikTok) {
+            label.textContent = `Preparing video (audio check)…`;
+            up = await api("POST", "/upload-tiktok-video", fd, true);
+          } else {
+            up = await api("POST", "/upload", fd, true);
+          }
+          mediaItems.push({ id: up.id, path: up.path });
+        }
       }
 
       label.textContent = `Scheduling: ${postLabel}`;
@@ -1848,6 +1896,7 @@ async function scheduleAll() {
       const title = rawTitle.slice(0, 100);
       const isCarousel = p.slideshow && mediaItems.length > 1;
       const isVideo    = !p.slideshow && p.file?.type?.startsWith("video/");
+      // needsMusic still used for buildSettings (YouTube Shorts etc.)
       const needsMusic = p.slideshow
         ? true
         : (p.file.type.startsWith("image/") || !(await videoHasAudio(p.url)));
