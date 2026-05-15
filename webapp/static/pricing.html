@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pricing — SlideCast</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:     #0a0807;
+  --card:   rgba(255,247,232,0.05);
+  --border: rgba(255,247,232,0.12);
+  --accent: #ff5c7a;
+  --text:   #fbf6ec;
+  --muted:  #aea394;
+  --sans:   'Plus Jakarta Sans', system-ui, sans-serif;
+  --serif:  'Fraunces', serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80px 20px 120px;
+  -webkit-font-smoothing: antialiased;
+}
+
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 32px;
+  background: rgba(10,8,7,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-brand { font-family: var(--serif); font-size: 1.2rem; color: var(--text); text-decoration: none; }
+.nav-links { display: flex; gap: 24px; }
+.nav-links a { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+.nav-links a:hover { color: var(--text); }
+
+.hero { text-align: center; margin-bottom: 56px; }
+.eyebrow {
+  display: inline-block;
+  font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent);
+  background: rgba(255,92,122,0.1);
+  border: 1px solid rgba(255,92,122,0.25);
+  border-radius: 99px; padding: 4px 14px; margin-bottom: 20px;
+}
+h1 {
+  font-family: var(--serif); font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 600; line-height: 1.15; margin-bottom: 16px;
+}
+h1 em { font-style: italic; color: var(--accent); }
+.subtitle { color: var(--muted); font-size: 1rem; max-width: 480px; margin: 0 auto; line-height: 1.6; }
+
+.cards { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 40px 36px;
+  width: 340px;
+  position: relative;
+  transition: border-color 0.2s;
+}
+.card.featured {
+  border-color: var(--accent);
+  box-shadow: 0 0 40px rgba(255,92,122,0.15);
+}
+.badge {
+  position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: #fff;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; padding: 4px 14px; border-radius: 99px;
+  white-space: nowrap;
+}
+.plan-name { font-size: 0.85rem; font-weight: 700; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+.price {
+  font-family: var(--serif); font-size: 3rem; font-weight: 600;
+  line-height: 1; margin-bottom: 4px;
+}
+.price sup { font-size: 1.2rem; vertical-align: top; margin-top: 8px; }
+.price-period { color: var(--muted); font-size: 0.85rem; margin-bottom: 28px; }
+
+.features { list-style: none; margin-bottom: 36px; display: flex; flex-direction: column; gap: 12px; }
+.features li { display: flex; align-items: flex-start; gap: 10px; font-size: 0.9rem; }
+.features li svg { flex-shrink: 0; margin-top: 2px; }
+.features li.yes svg { color: var(--accent); }
+.features li.no  svg { color: var(--muted); }
+.features li.yes span { color: var(--text); }
+.features li.no  span { color: var(--muted); text-decoration: line-through; }
+
+.email-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.email-row label { font-size: 0.78rem; color: var(--muted); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.email-row input {
+  background: rgba(255,247,232,0.06);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--text);
+  font-family: var(--sans); font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.email-row input:focus { border-color: var(--accent); }
+
+.err { color: #e8607a; font-size: 0.8rem; margin-top: 6px; display: none; }
+
+.btn {
+  display: block; width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  font-family: var(--sans); font-size: 0.95rem; font-weight: 700;
+  cursor: pointer; border: none;
+  transition: opacity 0.15s, transform 0.1s;
+  text-align: center; text-decoration: none;
+}
+.btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn .spinner { display: none; }
+.btn.loading .spinner { display: inline-block; animation: spin 0.7s linear infinite; }
+.btn.loading .btn-text { display: none; }
+
+.guarantee {
+  margin-top: 48px; text-align: center;
+  color: var(--muted); font-size: 0.85rem; max-width: 400px;
+}
+.guarantee strong { color: var(--text); }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="/">SlideCast</a>
+  <div class="nav-links">
+    <a href="/">Generate</a>
+    <a href="/scheduler">Scheduler</a>
+    <a href="/pricing">Pricing</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="eyebrow">Simple pricing</div>
+  <h1>Pick your plan.<br><em>Grow faster.</em></h1>
+  <p class="subtitle">Schedule to TikTok &amp; Instagram, auto-add audio, and generate carousels — all in one place.</p>
+</div>
+
+<div class="cards">
+
+  <!-- Basic -->
+  <div class="card">
+    <div class="plan-name">Basic</div>
+    <div class="price"><sup>$</sup>29<span style="font-size:1.2rem">.99</span></div>
+    <div class="price-period">per month · cancel anytime</div>
+
+    <ul class="features">
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Carousel generation</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>TikTok &amp; Instagram scheduling</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Auto audio on posts</span>
+      </li>
+      <li class="no">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Compilation carousels</span>
+      </li>
+      <li class="no">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Priority support</span>
+      </li>
+    </ul>
+
+    <div class="email-row">
+      <label for="emailBasic">Your email</label>
+      <input type="email" id="emailBasic" placeholder="you@example.com" autocomplete="email">
+    </div>
+    <p class="err" id="errBasic">Please enter a valid email address.</p>
+
+    <button class="btn btn-outline" id="btnBasic" onclick="startCheckout('basic','emailBasic','errBasic','btnBasic')">
+      <span class="btn-text">Get Basic →</span>
+      <span class="spinner">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+      </span>
+    </button>
+  </div>
+
+  <!-- Pro -->
+  <div class="card featured">
+    <div class="badge">Most Popular</div>
+    <div class="plan-name">Pro</div>
+    <div class="price"><sup>$</sup>69<span style="font-size:1.2rem">.99</span></div>
+    <div class="price-period">per month · cancel anytime</div>
+
+    <ul class="features">
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Unlimited carousel generation</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>TikTok &amp; Instagram scheduling</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Auto audio on every post</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Compilation carousels</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Priority support</span>
+      </li>
+    </ul>
+
+    <div class="email-row">
+      <label for="emailPro">Your email</label>
+      <input type="email" id="emailPro" placeholder="you@example.com" autocomplete="email">
+    </div>
+    <p class="err" id="errPro">Please enter a valid email address.</p>
+
+    <button class="btn btn-primary" id="btnPro" onclick="startCheckout('pro','emailPro','errPro','btnPro')">
+      <span class="btn-text">Get Pro →</span>
+      <span class="spinner">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+      </span>
+    </button>
+  </div>
+
+</div>
+
+<p class="guarantee">
+  <strong>30-day money-back guarantee.</strong> Not happy? Email us and we'll refund you — no questions asked.
+</p>
+
+<script>
+async function startCheckout(plan, emailId, errId, btnId) {
+  const emailInput = document.getElementById(emailId);
+  const errEl      = document.getElementById(errId);
+  const btn        = document.getElementById(btnId);
+  const email      = emailInput.value.trim();
+
+  errEl.style.display = "none";
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errEl.textContent = "Please enter a valid email address.";
+    errEl.style.display = "block";
+    emailInput.focus();
+    return;
+  }
+
+  btn.classList.add("loading");
+  btn.disabled = true;
+
+  try {
+    const res  = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, plan })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Something went wrong");
+    window.location.href = data.url;
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.style.display = "block";
+    btn.classList.remove("loading");
+    btn.disabled = false;
+  }
+}
+
+// Allow Enter key in either email field
+document.getElementById("emailBasic").addEventListener("keydown", e => {
+  if (e.key === "Enter") startCheckout("basic","emailBasic","errBasic","btnBasic");
+});
+document.getElementById("emailPro").addEventListener("keydown", e => {
+  if (e.key === "Enter") startCheckout("pro","emailPro","errPro","btnPro");
+});
+</script>
+</body>
+</html>

@@ -410,6 +410,75 @@ def _load_env() -> None:
 
 _load_env()
 
+# ---------------------------------------------------------------------------
+# Stripe setup
+# ---------------------------------------------------------------------------
+
+import stripe as _stripe  # type: ignore
+
+_stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY  = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET   = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_ID_BASIC   = os.environ.get("STRIPE_PRICE_ID_BASIC", "")   # $29.99/mo
+STRIPE_PRICE_ID_PRO     = os.environ.get("STRIPE_PRICE_ID_PRO",   "")   # $69.99/mo
+STRIPE_SUCCESS_URL      = os.environ.get("STRIPE_SUCCESS_URL", "")
+STRIPE_CANCEL_URL       = os.environ.get("STRIPE_CANCEL_URL",  "")
+
+# ---------------------------------------------------------------------------
+# Firebase Admin + Firestore
+# ---------------------------------------------------------------------------
+import firebase_admin as _fb_admin                          # type: ignore
+from firebase_admin import credentials as _fb_creds         # type: ignore
+from firebase_admin import firestore as _fb_firestore       # type: ignore
+
+def _init_firebase():
+    if _fb_admin._apps:
+        return  # already initialised
+    cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if cred_path and os.path.isfile(cred_path):
+        cred = _fb_creds.Certificate(cred_path)
+        _fb_admin.initialize_app(cred)
+        print(f"[firebase] initialised with service account: {cred_path}")
+    else:
+        # Fallback: try Application Default Credentials (works on GCP/Cloud Run)
+        _fb_admin.initialize_app()
+        print("[firebase] initialised with Application Default Credentials")
+
+try:
+    _init_firebase()
+    _db = _fb_firestore.client()
+    _USERS_COL = "users"
+    print("[firebase] Firestore connected ✓")
+except Exception as _fb_err:
+    print(f"[firebase] WARNING: Firestore unavailable — {_fb_err}")
+    _db = None
+    _USERS_COL = "users"
+
+
+def _get_user(email: str) -> dict:
+    """Fetch user document from Firestore. Returns {} if not found."""
+    if not _db:
+        return {}
+    try:
+        doc = _db.collection(_USERS_COL).document(email.lower().strip()).get()
+        return doc.to_dict() or {} if doc.exists else {}
+    except Exception as e:
+        print(f"[firestore] get_user error: {e}")
+        return {}
+
+def _set_user(email: str, data: dict) -> None:
+    """Upsert user document in Firestore (merges with existing fields)."""
+    if not _db:
+        return
+    try:
+        _db.collection(_USERS_COL).document(email.lower().strip()).set(data, merge=True)
+    except Exception as e:
+        print(f"[firestore] set_user error: {e}")
+
+def _is_paid(email: str) -> bool:
+    entry = _get_user(email)
+    return entry.get("status") == "active"
+
 # Lazy imports so the server starts even if a pipeline file has issues
 def _import_single():
     import run as _single_run  # pipeline/run.py
@@ -1810,6 +1879,156 @@ async def api_upload_tiktok_video(request: Request):
         raise HTTPException(500, str(e))
     finally:
         _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Stripe routes
+# ---------------------------------------------------------------------------
+
+@app.get("/pricing")
+def pricing_page():
+    return FileResponse(os.path.join(STATIC, "pricing.html"))
+
+@app.get("/auth")
+def auth_page():
+    return FileResponse(os.path.join(STATIC, "auth.html"))
+
+@app.get("/success")
+def success_page(plan: str = "basic"):
+    from fastapi.responses import RedirectResponse
+    # After Stripe payment → go to auth page to sign in / create account
+    return RedirectResponse(url=f"/auth?plan={plan}", status_code=302)
+
+@app.get("/cancel")
+def cancel_page():
+    return FileResponse(os.path.join(STATIC, "pricing.html"))
+
+
+@app.post("/api/create-checkout-session")
+async def create_checkout_session(request: Request):
+    """Create a Stripe Checkout session and return the redirect URL."""
+    try:
+        body  = await request.json()
+        email = body.get("email", "").strip().lower()
+        plan  = body.get("plan", "basic")   # "basic" or "pro"
+
+        price_id = STRIPE_PRICE_ID_PRO if plan == "pro" else STRIPE_PRICE_ID_BASIC
+        if not price_id:
+            raise HTTPException(500, f"STRIPE_PRICE_ID_{plan.upper()} not set in .env")
+
+        # Build URLs from the incoming request so local and production both work
+        base = str(request.base_url).rstrip("/")
+        success_url = (STRIPE_SUCCESS_URL or f"{base}/success") + f"?plan={plan}&session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url  = STRIPE_CANCEL_URL  or f"{base}/pricing"
+
+        session_params = {
+            "mode": "subscription",
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "success_url": success_url,
+            "cancel_url":  cancel_url,
+            "billing_address_collection": "auto",
+            "payment_method_types": ["card"],
+        }
+        if email:
+            session_params["customer_email"] = email
+
+        session = _stripe.checkout.Session.create(**session_params)
+        return {"url": session.url}
+
+    except _stripe.StripeError as e:
+        raise HTTPException(400, str(e.user_message or e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+@app.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Receive and verify Stripe webhook events."""
+    payload = await request.body()
+    sig     = request.headers.get("stripe-signature", "")
+
+    try:
+        event = _stripe.Webhook.construct_event(
+            payload, sig, STRIPE_WEBHOOK_SECRET
+        )
+    except _stripe.errors.SignatureVerificationError:
+        raise HTTPException(400, "Invalid signature")
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+    if event["type"] == "checkout.session.completed":
+        session  = event["data"]["object"]
+        email    = (session.get("customer_details") or {}).get("email") or \
+                   session.get("customer_email") or ""
+        customer = session.get("customer", "")
+        sub_id   = session.get("subscription", "")
+        if email:
+            _set_user(email, {
+                "email":           email,
+                "stripe_customer_id": customer,
+                "subscription_id": sub_id,
+                "status":          "active",
+            })
+            print(f"[stripe] ✓ new subscriber: {email}")
+
+    elif event["type"] == "customer.subscription.deleted":
+        sub    = event["data"]["object"]
+        sub_id = sub.get("id", "")
+        # Find user by subscription_id and mark cancelled
+        if _db:
+            try:
+                docs = _db.collection(_USERS_COL)\
+                          .where("subscription_id", "==", sub_id).stream()
+                for doc in docs:
+                    doc.reference.update({"status": "cancelled"})
+                    print(f"[stripe] subscription cancelled: {doc.id}")
+            except Exception as e:
+                print(f"[firestore] cancel lookup error: {e}")
+
+    return {"status": "ok"}
+
+
+@app.post("/api/link-account")
+async def link_account(request: Request):
+    """Called after Firebase auth — saves user info + plan to Firestore."""
+    try:
+        body  = await request.json()
+        email = body.get("email", "").strip().lower()
+        name  = body.get("name", "")
+        plan  = body.get("plan", "basic")
+        uid   = body.get("uid", "")
+        if not email:
+            raise HTTPException(400, "email required")
+
+        existing = _get_user(email)
+        # Preserve existing Stripe fields; don't downgrade an active plan
+        resolved_plan   = existing.get("plan")   or plan
+        resolved_status = existing.get("status") or "active"
+
+        _set_user(email, {
+            "email":  email,
+            "name":   name or existing.get("name", ""),
+            "uid":    uid,
+            "plan":   resolved_plan,
+            "status": resolved_status,
+        })
+        print(f"[auth] linked account: {email} plan={resolved_plan}")
+        return {"ok": True, "plan": resolved_plan}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/check-access")
+async def check_access(request: Request):
+    """Check if an email has an active subscription in Firestore."""
+    email = request.query_params.get("email", "").strip().lower()
+    if not email:
+        return {"paid": False}
+    return {"paid": _is_paid(email)}
 
 
 @app.get("/")
