@@ -31,19 +31,41 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── Nav ── */
 nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 32px;
-  background: rgba(10,8,7,0.85);
+  padding: 0 36px;
+  height: 60px;
+  background: rgba(10,8,7,0.9);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
-.nav-brand { font-family: var(--serif); font-size: 1.2rem; color: var(--text); text-decoration: none; }
-.nav-links { display: flex; gap: 24px; }
-.nav-links a { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
-.nav-links a:hover { color: var(--text); }
+.nav-brand {
+  font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
+  color: var(--text); text-decoration: none; letter-spacing: -0.01em;
+}
+.nav-right {
+  display: flex; align-items: center; gap: 20px;
+}
+.nav-email {
+  font-size: 0.88rem; color: var(--muted); font-weight: 500;
+}
+.nav-logout {
+  background: none; border: none; cursor: pointer;
+  font-family: var(--sans); font-size: 0.88rem; font-weight: 600;
+  color: var(--muted); padding: 0; transition: color 0.15s;
+}
+.nav-logout:hover { color: var(--text); }
+.nav-signin {
+  background: none; border: 1px solid var(--border); cursor: pointer;
+  font-family: var(--sans); font-size: 0.88rem; font-weight: 600;
+  color: var(--text); padding: 7px 18px; border-radius: 99px;
+  transition: background 0.15s;
+}
+.nav-signin:hover { background: rgba(255,247,232,0.08); }
 
+/* ── Hero ── */
 .hero { text-align: center; margin-bottom: 56px; }
 .eyebrow {
   display: inline-block;
@@ -60,6 +82,7 @@ h1 {
 h1 em { font-style: italic; color: var(--accent); }
 .subtitle { color: var(--muted); font-size: 1rem; max-width: 480px; margin: 0 auto; line-height: 1.6; }
 
+/* ── Cards ── */
 .cards { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
 
 .card {
@@ -144,11 +167,9 @@ h1 em { font-style: italic; color: var(--accent); }
 <body>
 
 <nav>
-  <a class="nav-brand" href="/">SlideCast</a>
-  <div class="nav-links">
-    <a href="/">Generate</a>
-    <a href="/scheduler">Scheduler</a>
-    <a href="/pricing">Pricing</a>
+  <a class="nav-brand" href="/">theslidecast</a>
+  <div class="nav-right" id="navRight">
+    <!-- filled by Firebase auth below -->
   </div>
 </nav>
 
@@ -189,7 +210,7 @@ h1 em { font-style: italic; color: var(--accent); }
       </li>
     </ul>
 
-    <div class="email-row">
+    <div class="email-row" id="emailRowBasic">
       <label for="emailBasic">Your email</label>
       <input type="email" id="emailBasic" placeholder="you@example.com" autocomplete="email">
     </div>
@@ -233,7 +254,7 @@ h1 em { font-style: italic; color: var(--accent); }
       </li>
     </ul>
 
-    <div class="email-row">
+    <div class="email-row" id="emailRowPro">
       <label for="emailPro">Your email</label>
       <input type="email" id="emailPro" placeholder="you@example.com" autocomplete="email">
     </div>
@@ -252,6 +273,54 @@ h1 em { font-style: italic; color: var(--accent); }
 <p class="guarantee">
   <strong>30-day money-back guarantee.</strong> Not happy? Email us and we'll refund you — no questions asked.
 </p>
+
+<script type="module">
+import { initializeApp }                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyANRIcHZsiB-nX2NebAeh_RVbC7I_K6u84",
+  authDomain:        "slidecast-75f5c.firebaseapp.com",
+  projectId:         "slidecast-75f5c",
+  storageBucket:     "slidecast-75f5c.firebasestorage.app",
+  messagingSenderId: "829361595060",
+  appId:             "1:829361595060:web:31526e2f798ee8aba6ede1",
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+onAuthStateChanged(auth, user => {
+  const nav = document.getElementById("navRight");
+  if (user) {
+    // If user already has an active plan, send them home
+    const stored = JSON.parse(localStorage.getItem("sc_user") || "{}");
+    if (stored.plan && stored.plan !== "") {
+      window.location.href = "/";
+      return;
+    }
+
+    // Show email + Logout
+    nav.innerHTML = `
+      <span class="nav-email">${user.email}</span>
+      <button class="nav-logout" id="logoutBtn">Logout</button>
+    `;
+    document.getElementById("logoutBtn").onclick = async () => {
+      await signOut(auth);
+      localStorage.removeItem("sc_user");
+      window.location.href = "/auth?redirect=/pricing";
+    };
+    // Pre-fill email fields with signed-in email
+    const emailBasic = document.getElementById("emailBasic");
+    const emailPro   = document.getElementById("emailPro");
+    if (emailBasic) emailBasic.value = user.email;
+    if (emailPro)   emailPro.value   = user.email;
+  } else {
+    // Show Sign in button
+    nav.innerHTML = `<button class="nav-signin" onclick="window.location.href='/auth?redirect=/pricing'">Sign in</button>`;
+  }
+});
+</script>
 
 <script>
 async function startCheckout(plan, emailId, errId, btnId) {

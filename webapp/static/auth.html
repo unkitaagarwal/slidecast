@@ -20,26 +20,23 @@ body {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
   padding: 40px 20px; -webkit-font-smoothing: antialiased;
 }
-.card {
-  width: 100%; max-width: 420px;
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 24px; padding: 48px 40px;
-}
-.logo { font-family: var(--serif); font-size: 1.4rem; text-align: center; margin-bottom: 8px; }
-.subtitle { color: var(--muted); font-size: 0.88rem; text-align: center; margin-bottom: 32px; }
-.plan-badge {
-  display: inline-block; background: rgba(255,92,122,0.12);
-  border: 1px solid rgba(255,92,122,0.3); border-radius: 99px;
-  color: var(--accent); font-size: 0.75rem; font-weight: 700;
-  letter-spacing: 0.08em; text-transform: uppercase;
-  padding: 3px 12px; margin-bottom: 24px;
-}
-.plan-wrap { text-align: center; }
 
-/* Divider */
-.divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
-.divider span { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
-.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.card {
+  width: 100%; max-width: 400px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 24px; padding: 44px 36px 36px;
+}
+
+/* Logo */
+.logo {
+  font-family: var(--serif); font-size: 1.6rem; text-align: center;
+  margin-bottom: 8px; color: var(--text);
+}
+.tagline {
+  text-align: center; color: var(--muted); font-size: 0.88rem;
+  margin-bottom: 32px; line-height: 1.4;
+}
 
 /* Social buttons */
 .btn-social {
@@ -50,85 +47,125 @@ body {
   color: var(--text); transition: background 0.15s, transform 0.1s;
   margin-bottom: 10px;
 }
-.btn-social:hover { background: rgba(255,247,232,0.1); transform: translateY(-1px); }
+.btn-social:hover:not(:disabled) { background: rgba(255,247,232,0.11); transform: translateY(-1px); }
 .btn-social:active { transform: translateY(0); }
-.btn-social svg { flex-shrink: 0; }
+.btn-social:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* Email form */
+/* Divider */
+.divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 18px 0;
+}
+.divider span { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
+.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* Fields */
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-.field label { font-size: 0.78rem; font-weight: 600; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.field label { font-size: 0.75rem; font-weight: 700; color: var(--muted); letter-spacing: 0.07em; text-transform: uppercase; }
 .field input {
   background: rgba(255,247,232,0.06); border: 1px solid var(--border);
-  border-radius: 10px; padding: 11px 14px; color: var(--text);
+  border-radius: 10px; padding: 12px 14px; color: var(--text);
   font-family: var(--sans); font-size: 0.9rem; outline: none;
   transition: border-color 0.15s;
 }
 .field input:focus { border-color: var(--accent); }
+.field input::placeholder { color: rgba(174,163,148,0.6); }
 
-.btn-primary {
-  display: block; width: 100%; padding: 13px; border-radius: 12px;
+/* Forgot */
+.forgot { text-align: right; margin-top: -4px; margin-bottom: 14px; }
+.forgot a { font-size: 0.78rem; color: var(--muted); cursor: pointer; text-decoration: none; }
+.forgot a:hover { color: var(--accent); }
+
+/* Submit btn */
+.btn-submit {
+  display: block; width: 100%; padding: 14px; border-radius: 12px;
   background: var(--accent); color: #fff; border: none; cursor: pointer;
   font-family: var(--sans); font-size: 0.95rem; font-weight: 700;
-  transition: opacity 0.15s; margin-top: 4px;
+  transition: opacity 0.15s, transform 0.1s; margin-top: 4px;
 }
-.btn-primary:hover { opacity: 0.88; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-submit:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+.btn-submit:active { transform: translateY(0); }
+.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.toggle { text-align: center; margin-top: 16px; font-size: 0.85rem; color: var(--muted); }
-.toggle a { color: var(--accent); cursor: pointer; text-decoration: none; font-weight: 600; }
+/* Loading spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { display: inline-block; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
 
+/* Messages */
 .err { color: #e8607a; font-size: 0.82rem; margin-top: 10px; text-align: center; display: none; }
 .msg { color: #66c992; font-size: 0.82rem; margin-top: 10px; text-align: center; display: none; }
+
+/* Bottom note */
+.terms {
+  text-align: center; margin-top: 22px;
+  font-size: 0.76rem; color: var(--muted); line-height: 1.5;
+}
+.terms a { color: var(--muted); text-decoration: underline; }
+.terms a:hover { color: var(--text); }
+
+.back-link {
+  display: block; text-align: center; margin-top: 14px;
+  font-size: 0.78rem; color: rgba(174,163,148,0.6);
+  text-decoration: none;
+}
+.back-link:hover { color: var(--muted); }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="logo">SlideCast</div>
-  <p class="subtitle">Sign in to activate your subscription</p>
-
-  <div class="plan-wrap">
-    <span class="plan-badge" id="planBadge">Pro Plan</span>
-  </div>
+  <p class="tagline">Create and schedule carousels in minutes</p>
 
   <!-- Google -->
-  <button class="btn-social" onclick="signInGoogle()">
-    <svg width="18" height="18" viewBox="0 0 18 18"><path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/><path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/><path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/><path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/></svg>
+  <button class="btn-social" id="googleBtn" onclick="signInGoogle()">
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+      <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
+      <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+    </svg>
     Continue with Google
   </button>
 
-  <div class="divider"><span>or sign in with email</span></div>
+  <div class="divider"><span>or continue with email</span></div>
 
-  <!-- Email form -->
-  <div id="emailForm">
-    <div class="field">
-      <label>Email</label>
-      <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email">
-    </div>
-    <div class="field" id="nameField" style="display:none">
-      <label>Full name</label>
-      <input type="text" id="nameInput" placeholder="Your name">
-    </div>
-    <div class="field">
-      <label>Password</label>
-      <input type="password" id="passInput" placeholder="••••••••" autocomplete="current-password">
-    </div>
-    <p class="err" id="errMsg"></p>
-    <p class="msg" id="okMsg"></p>
-    <button class="btn-primary" id="submitBtn" onclick="submitEmail()">
-      <span id="submitLabel">Sign in</span>
-    </button>
-    <p class="toggle">
-      <span id="toggleText">Don't have an account?</span>
-      <a onclick="toggleMode()"> <span id="toggleLink">Create one</span></a>
-    </p>
+  <!-- Email -->
+  <div class="field">
+    <label>Email</label>
+    <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email">
   </div>
+
+  <!-- Password -->
+  <div class="field">
+    <label>Password</label>
+    <input type="password" id="passInput" placeholder="••••••••" autocomplete="current-password">
+  </div>
+
+  <!-- Forgot password -->
+  <div class="forgot">
+    <a onclick="sendReset()">Forgot password?</a>
+  </div>
+
+  <p class="err" id="errMsg"></p>
+  <p class="msg" id="okMsg"></p>
+
+  <button class="btn-submit" id="submitBtn" onclick="submitEmail()">
+    Continue
+  </button>
+
+  <p class="terms">
+    By continuing, you agree to our
+    <a href="/pricing">Terms of Service</a> and <a href="/pricing">Privacy Policy</a>
+  </p>
+  <a class="back-link" href="/pricing">← Back to pricing</a>
 </div>
 
 <script type="module">
-import { initializeApp }                          from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { initializeApp }         from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider,
          signInWithEmailAndPassword, createUserWithEmailAndPassword,
-         updateProfile, onAuthStateChanged }       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+         updateProfile, sendPasswordResetEmail,
+         onAuthStateChanged }    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyANRIcHZsiB-nX2NebAeh_RVbC7I_K6u84",
@@ -137,43 +174,34 @@ const firebaseConfig = {
   storageBucket:     "slidecast-75f5c.firebasestorage.app",
   messagingSenderId: "829361595060",
   appId:             "1:829361595060:web:31526e2f798ee8aba6ede1",
-  measurementId:     "G-WT3E90JEFD"
 };
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-// Read plan from URL param
-const params  = new URLSearchParams(location.search);
-const plan    = params.get("plan") || localStorage.getItem("sc_pending_plan") || "basic";
-const badgeEl = document.getElementById("planBadge");
-badgeEl.textContent = plan === "pro" ? "Pro Plan" : "Basic Plan";
+// Read plan + redirect from URL
+const params   = new URLSearchParams(location.search);
+const plan     = params.get("plan") || localStorage.getItem("sc_pending_plan") || "";
+const redirect = params.get("redirect") || "/scheduler";
 
-// If already signed in, skip to linking
+// If already signed in, go straight to app
 onAuthStateChanged(auth, async user => {
-  if (user) await linkAndRedirect(user, plan);
+  if (user) await linkAndRedirect(user);
 });
-
-let isSignUp = false;
-
-window.toggleMode = function() {
-  isSignUp = !isSignUp;
-  document.getElementById("nameField").style.display    = isSignUp ? "flex" : "none";
-  document.getElementById("submitLabel").textContent    = isSignUp ? "Create account" : "Sign in";
-  document.getElementById("toggleText").textContent     = isSignUp ? "Already have an account?" : "Don't have an account?";
-  document.getElementById("toggleLink").textContent     = isSignUp ? "Sign in" : "Create one";
-  document.getElementById("passInput").autocomplete     = isSignUp ? "new-password" : "current-password";
-  clearMessages();
-};
 
 window.signInGoogle = async function() {
   clearMessages();
+  setSocialBusy(true);
   try {
     const provider = new GoogleAuthProvider();
     const result   = await signInWithPopup(auth, provider);
-    await linkAndRedirect(result.user, plan);
+    await linkAndRedirect(result.user);
   } catch (e) {
-    showErr(e.message);
+    if (e.code !== "auth/popup-closed-by-user") {
+      showErr(friendly(e.code) || e.message);
+    }
+  } finally {
+    setSocialBusy(false);
   }
 };
 
@@ -181,77 +209,120 @@ window.submitEmail = async function() {
   clearMessages();
   const email = document.getElementById("emailInput").value.trim();
   const pass  = document.getElementById("passInput").value;
-  const name  = document.getElementById("nameInput").value.trim();
-  const btn   = document.getElementById("submitBtn");
+  if (!email) { showErr("Please enter your email address."); return; }
+  if (!pass)  { showErr("Please enter your password."); return; }
 
-  if (!email || !pass) { showErr("Please fill in all fields."); return; }
-
-  btn.disabled = true;
+  setBusy(true);
   try {
     let user;
-    if (isSignUp) {
-      const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      user = cred.user;
-      if (name) await updateProfile(user, { displayName: name });
-    } else {
+    try {
+      // Try sign in first
       const cred = await signInWithEmailAndPassword(auth, email, pass);
       user = cred.user;
+    } catch (e) {
+      if (e.code === "auth/user-not-found" || e.code === "auth/invalid-credential") {
+        // No account — create one
+        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        user = cred.user;
+      } else {
+        throw e;
+      }
     }
-    await linkAndRedirect(user, plan);
+    await linkAndRedirect(user);
   } catch (e) {
-    showErr(friendlyError(e.code));
+    showErr(friendly(e.code) || e.message);
   } finally {
-    btn.disabled = false;
+    setBusy(false);
   }
 };
 
-async function linkAndRedirect(user, plan) {
+window.sendReset = async function() {
+  const email = document.getElementById("emailInput").value.trim();
+  if (!email) { showErr("Enter your email above, then click Forgot password."); return; }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    showOk("Reset link sent — check your inbox.");
+  } catch (e) {
+    showErr(friendly(e.code) || e.message);
+  }
+};
+
+async function linkAndRedirect(user) {
+  const name = user.displayName || user.email.split("@")[0];
+  let resolvedPlan = "";
   try {
     const token = await user.getIdToken();
-    await fetch("/api/link-account", {
+    const res   = await fetch("/api/link-account", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({
-        uid:   user.uid,
-        email: user.email,
-        name:  user.displayName || "",
-        plan:  plan,
-        token: token
-      })
+      body:    JSON.stringify({ uid: user.uid, email: user.email, name, plan, token })
     });
+    const data = await res.json().catch(() => ({}));
+    resolvedPlan = data.plan || plan || "";
+    localStorage.setItem("sc_user", JSON.stringify({
+      name:  name,
+      email: user.email,
+      photo: user.photoURL || "",
+      plan:  resolvedPlan,
+    }));
   } catch (e) {
-    console.warn("link-account failed:", e);
+    console.warn("link-account:", e);
   }
-  // Save user info for nav display
-  localStorage.setItem("sc_user", JSON.stringify({
-    name:  user.displayName || user.email.split("@")[0],
-    email: user.email,
-    photo: user.photoURL || "",
-    plan:  plan
-  }));
   localStorage.removeItem("sc_pending_plan");
-  window.location.href = "/scheduler";
+  if (!resolvedPlan || resolvedPlan === "") {
+    // No active plan → pick a plan first
+    window.location.href = "/pricing";
+  } else {
+    // Active plan → go to intended destination, but never strand them on /pricing
+    const dest = (redirect === "/pricing" || redirect === "" || !redirect) ? "/" : redirect;
+    window.location.href = dest;
+  }
+}
+
+function setBusy(busy) {
+  const btn = document.getElementById("submitBtn");
+  btn.disabled = busy;
+  btn.innerHTML = busy
+    ? `<svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Please wait…`
+    : `Continue`;
+}
+
+function setSocialBusy(busy) {
+  document.getElementById("googleBtn").disabled = busy;
 }
 
 function showErr(msg) {
   const el = document.getElementById("errMsg");
   el.textContent = msg; el.style.display = "block";
+  document.getElementById("okMsg").style.display = "none";
+}
+function showOk(msg) {
+  const el = document.getElementById("okMsg");
+  el.textContent = msg; el.style.display = "block";
+  document.getElementById("errMsg").style.display = "none";
 }
 function clearMessages() {
   document.getElementById("errMsg").style.display = "none";
   document.getElementById("okMsg").style.display  = "none";
 }
-function friendlyError(code) {
-  const map = {
-    "auth/user-not-found":       "No account found with this email.",
-    "auth/wrong-password":       "Incorrect password.",
-    "auth/email-already-in-use": "An account with this email already exists.",
-    "auth/weak-password":        "Password must be at least 6 characters.",
-    "auth/invalid-email":        "Please enter a valid email address.",
-    "auth/invalid-credential":   "Incorrect email or password.",
-  };
-  return map[code] || "Something went wrong. Please try again.";
+
+function friendly(code) {
+  return ({
+    "auth/wrong-password":        "Incorrect password. Please try again.",
+    "auth/invalid-credential":    "Incorrect email or password.",
+    "auth/email-already-in-use":  "An account with this email already exists.",
+    "auth/weak-password":         "Password must be at least 6 characters.",
+    "auth/invalid-email":         "Please enter a valid email address.",
+    "auth/popup-closed-by-user":  "Sign-in popup was closed. Please try again.",
+    "auth/too-many-requests":     "Too many attempts. Please wait a moment and try again.",
+    "auth/network-request-failed":"Network error. Please check your connection.",
+  })[code] || "";
 }
+
+// Enter key support
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter") window.submitEmail();
+});
 </script>
 </body>
 </html>

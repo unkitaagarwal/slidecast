@@ -18,36 +18,35 @@ const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 const STYLE = `
-  .sc-user-chip {
-    display: flex; align-items: center; gap: 8px;
-    background: rgba(255,247,232,0.07);
-    border: 1px solid rgba(255,247,232,0.12);
-    border-radius: 99px; padding: 5px 14px 5px 6px;
-    font-family: inherit; cursor: default;
+  .sc-nav-user {
+    display: flex; align-items: center; gap: 16px;
   }
-  .sc-avatar {
-    width: 28px; height: 28px; border-radius: 50%;
-    background: #ff5c7a; display: flex; align-items: center;
-    justify-content: center; font-size: 0.75rem; font-weight: 700;
-    color: #fff; overflow: hidden; flex-shrink: 0;
+  .sc-nav-email {
+    font-family: inherit; font-size: 0.88rem; font-weight: 500;
+    color: rgba(251,246,236,0.75);
   }
-  .sc-avatar img { width: 100%; height: 100%; object-fit: cover; }
-  .sc-name { font-size: 0.85rem; font-weight: 600; color: #fbf6ec; max-width: 120px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sc-plan { font-size: 0.7rem; font-weight: 700; color: #ff5c7a;
-    text-transform: uppercase; letter-spacing: 0.06em; }
+  .sc-nav-plan {
+    font-size: 0.72rem; font-weight: 700; color: #ff5c7a;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    background: rgba(255,92,122,0.12);
+    border: 1px solid rgba(255,92,122,0.25);
+    border-radius: 99px; padding: 2px 10px;
+  }
   .sc-logout {
-    background: none; border: none; cursor: pointer; padding: 4px 8px;
-    color: #aea394; font-size: 0.8rem; font-family: inherit;
-    border-radius: 6px; transition: color 0.15s;
+    background: none; border: none; cursor: pointer; padding: 0;
+    color: rgba(174,163,148,0.85); font-size: 0.88rem; font-weight: 600;
+    font-family: inherit; transition: color 0.15s;
   }
-  .sc-logout:hover { color: #ff5c7a; }
+  .sc-logout:hover { color: #fbf6ec; }
   .sc-signin {
-    background: #ff5c7a; color: #fff; border: none; cursor: pointer;
-    padding: 8px 18px; border-radius: 99px; font-family: inherit;
-    font-size: 0.85rem; font-weight: 700; transition: opacity 0.15s;
+    background: none;
+    border: 1px solid rgba(255,247,232,0.18);
+    cursor: pointer; padding: 7px 18px; border-radius: 99px;
+    color: #fbf6ec; font-family: inherit;
+    font-size: 0.88rem; font-weight: 600;
+    transition: background 0.15s;
   }
-  .sc-signin:hover { opacity: 0.85; }
+  .sc-signin:hover { background: rgba(255,247,232,0.08); }
 `;
 
 function injectStyles() {
@@ -65,33 +64,29 @@ function getSlot() {
 function renderUser(user) {
   const slot = getSlot(); if (!slot) return;
   const stored = JSON.parse(localStorage.getItem("sc_user") || "{}");
-  const name   = user.displayName || stored.name || user.email.split("@")[0];
-  const photo  = user.photoURL || stored.photo || "";
+  const email  = user.email;
   const plan   = stored.plan || "basic";
-  const initials = name.slice(0, 2).toUpperCase();
 
   slot.innerHTML = `
-    <div class="sc-user-chip">
-      <div class="sc-avatar">
-        ${photo ? `<img src="${photo}" alt="${name}">` : initials}
-      </div>
-      <div>
-        <div class="sc-name">${name}</div>
-        <div class="sc-plan">${plan}</div>
-      </div>
+    <div class="sc-nav-user">
+      <span class="sc-nav-email">${email}</span>
+      <span class="sc-nav-plan">${plan}</span>
+      <button class="sc-logout" id="sc-logout-btn">Logout</button>
     </div>
-    <button class="sc-logout" id="sc-logout-btn">Sign out</button>
   `;
+
   document.getElementById("sc-logout-btn").onclick = async () => {
     await signOut(auth);
     localStorage.removeItem("sc_user");
+    // Stay on same page — update nav to signed-out state
     renderSignedOut();
   };
 }
 
 function renderSignedOut() {
   const slot = getSlot(); if (!slot) return;
-  slot.innerHTML = `<button class="sc-signin" onclick="window.location.href='/pricing'">Sign in</button>`;
+  const returnTo = encodeURIComponent(window.location.pathname);
+  slot.innerHTML = `<button class="sc-signin" onclick="window.location.href='/auth?redirect=${returnTo}'">Sign in / Sign up</button>`;
 }
 
 injectStyles();
