@@ -264,6 +264,8 @@
   function makeCard(it) {
     const c = document.createElement('div');
     c.className = 'lib-card';
+    c.dataset.format = it.format;
+    c.dataset.slug   = it.slug;
     c.innerHTML = `
       <div class="lib-thumb">
         <img src="${it.thumbnail}" loading="lazy" />
@@ -274,14 +276,18 @@
         <div class="lib-sub">${escapeHtml(it.subtitle || '')}</div>
       </div>
     `;
-    c.addEventListener('click', async () => {
-      const res = await fetch(`/api/preview/${it.format}/${it.slug}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      showLibraryModal(data);
-    });
     return c;
   }
+
+  // Delegated click for lib-cards (works on originals AND clones)
+  document.addEventListener('click', async (e) => {
+    const card = e.target.closest('.lib-card');
+    if (!card || !card.dataset.format) return;
+    const res = await fetch(`/api/preview/${card.dataset.format}/${card.dataset.slug}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    showLibraryModal(data);
+  });
 
   function renderLibrary() {
     const comps = allItems.filter((i) => i.format === 'compilation');
@@ -302,6 +308,10 @@
     } else {
       singles.forEach((it) => railSingle.appendChild(makeCard(it)));
     }
+
+    // Kick off auto-scroll now that cards are in the DOM
+    setupAutoScroll('comp');
+    setupAutoScroll('single');
   }
 
   // Rail arrow buttons — scroll left/right by ~80% of the rail width
@@ -314,6 +324,63 @@
       rail.scrollBy({ left: dir * rail.clientWidth * 0.8, behavior: 'smooth' });
     });
   });
+
+  // ---------- Auto-rotating rails (infinite marquee) ----------
+  // Works by duplicating the card set so there is always overflow, then
+  // pixel-scrolling with requestAnimationFrame. When the scroll reaches the
+  // midpoint (end of original set) it instantly snaps back to 0 — seamless loop.
+  const RAIL_PX_PER_SEC = 60; // scroll speed in pixels per second
+
+  function setupAutoScroll(railId) {
+    const rail = document.getElementById(`rail-${railId}`);
+    if (!rail) return;
+
+    // Cancel any previous RAF on this rail
+    if (rail._rafId) { cancelAnimationFrame(rail._rafId); rail._rafId = null; }
+
+    // Remove old duplicate nodes appended by a previous call
+    rail.querySelectorAll('[data-clone]').forEach(n => n.remove());
+
+    // Collect original cards
+    const origCards = Array.from(rail.querySelectorAll('.lib-card'));
+    if (origCards.length === 0) return;
+
+    // Clone the full set (enough copies to always overflow even on wide screens)
+    const copies = Math.max(3, Math.ceil(window.innerWidth / (origCards.length * 180)) + 1);
+    for (let i = 0; i < copies; i++) {
+      origCards.forEach(card => {
+        const clone = card.cloneNode(true);
+        clone.setAttribute('data-clone', '1');
+        rail.appendChild(clone);
+      });
+    }
+
+    // Remove scroll-snap so we can do pixel scrolling
+    rail.style.scrollSnapType = 'none';
+
+    let paused = false;
+    let lastTs  = null;
+
+    function tick(ts) {
+      if (lastTs !== null && !paused) {
+        const delta = (ts - lastTs) / 1000; // seconds
+        rail.scrollLeft += RAIL_PX_PER_SEC * delta;
+
+        // Seamless loop: once we've scrolled past the original set, snap back
+        const origWidth = origCards.reduce((sum, c) => sum + c.offsetWidth + 12, 0);
+        if (rail.scrollLeft >= origWidth) {
+          rail.scrollLeft -= origWidth;
+        }
+      }
+      lastTs = ts;
+      rail._rafId = requestAnimationFrame(tick);
+    }
+
+    rail.addEventListener('mouseenter', () => { paused = true; });
+    rail.addEventListener('mouseleave', () => { paused = false; });
+
+    rail._rafId = requestAnimationFrame(tick);
+  }
 
   // ---------- Animated counter ----------
   function animateCounter(el, target, duration = 1400) {

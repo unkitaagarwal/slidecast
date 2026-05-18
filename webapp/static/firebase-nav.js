@@ -2,8 +2,9 @@
 // Usage: <script type="module" src="/static/firebase-nav.js"></script>
 // Expects a <div id="nav-user-slot"></div> somewhere in the nav.
 
-import { initializeApp }                    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { initializeApp }                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc }            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyANRIcHZsiB-nX2NebAeh_RVbC7I_K6u84",
@@ -16,6 +17,7 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db   = getFirestore(app);
 
 const STYLE = `
   .sc-nav-user {
@@ -61,12 +63,18 @@ function getSlot() {
   return document.getElementById("nav-user-slot");
 }
 
-function renderUser(user) {
-  const slot = getSlot(); if (!slot) return;
-  const stored = JSON.parse(localStorage.getItem("sc_user") || "{}");
-  const email  = user.email;
-  const plan   = stored.plan || "basic";
+function attachLogout(slot) {
+  const btn = document.getElementById("sc-logout-btn");
+  if (!btn) return;
+  btn.onclick = async () => {
+    await signOut(auth);
+    localStorage.removeItem("sc_user");
+    renderSignedOut();
+  };
+}
 
+function renderUserSlot(email, plan) {
+  const slot = getSlot(); if (!slot) return;
   slot.innerHTML = `
     <div class="sc-nav-user">
       <span class="sc-nav-email">${email}</span>
@@ -74,13 +82,46 @@ function renderUser(user) {
       <button class="sc-logout" id="sc-logout-btn">Logout</button>
     </div>
   `;
+  attachLogout(slot);
+}
 
-  document.getElementById("sc-logout-btn").onclick = async () => {
-    await signOut(auth);
-    localStorage.removeItem("sc_user");
-    // Stay on same page — update nav to signed-out state
-    renderSignedOut();
-  };
+async function renderUser(user) {
+  const slot = getSlot(); if (!slot) return;
+
+  // Show a placeholder immediately so the nav doesn't flash empty
+  const cached = JSON.parse(localStorage.getItem("sc_user") || "{}");
+  if (cached.plan) renderUserSlot(user.email, cached.plan);
+
+  // Then fetch the real plan from Firestore (source of truth)
+  try {
+    let snap = await getDoc(doc(db, "users", user.email));
+    if (!snap.exists()) snap = await getDoc(doc(db, "users", user.uid));
+    let planName = "";
+    if (snap.exists()) {
+      const d  = snap.data();
+      const active = d.plan && d.plan !== "" && d.status === "active";
+      planName = active ? d.plan : "";
+    }
+
+    // Update localStorage so the rest of the app stays in sync
+    localStorage.setItem("sc_user", JSON.stringify({
+      name:  user.displayName || user.email.split("@")[0],
+      email: user.email,
+      photo: user.photoURL || "",
+      plan:  planName,
+    }));
+
+    if (planName) {
+      renderUserSlot(user.email, planName);
+    } else {
+      // No active plan — show sign-in button so they can pick a plan
+      renderSignedOut();
+    }
+  } catch (e) {
+    // Firestore unavailable — keep whatever we rendered from cache
+    console.warn("firebase-nav Firestore:", e);
+    if (!cached.plan) renderSignedOut();
+  }
 }
 
 function renderSignedOut() {

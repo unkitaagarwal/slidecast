@@ -162,6 +162,41 @@ h1 em { font-style: italic; color: var(--accent); }
   color: var(--muted); font-size: 0.85rem; max-width: 400px;
 }
 .guarantee strong { color: var(--text); }
+
+/* ── Marquee strip ── */
+.marquee-section {
+  width: 100vw;
+  margin-top: 80px;
+  overflow: hidden;
+  display: flex; flex-direction: column; gap: 12px;
+  /* subtle edge fades */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 80px, #000 calc(100% - 80px), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 80px, #000 calc(100% - 80px), transparent 100%);
+}
+.marquee-row {
+  display: flex; gap: 12px;
+  width: max-content;
+  will-change: transform;
+}
+.marquee-row.row-left  { animation: marquee-left  28s linear infinite; }
+.marquee-row.row-right { animation: marquee-right 32s linear infinite; }
+@keyframes marquee-left  { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+@keyframes marquee-right { from { transform: translateX(-50%) } to { transform: translateX(0) } }
+.marquee-row:hover { animation-play-state: paused; }
+
+.mq-card {
+  flex-shrink: 0;
+  width: 160px; height: 200px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255,247,232,0.1);
+  background: rgba(255,247,232,0.04);
+}
+.mq-card img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
 </style>
 </head>
 <body>
@@ -274,9 +309,63 @@ h1 em { font-style: italic; color: var(--accent); }
   <strong>30-day money-back guarantee.</strong> Not happy? Email us and we'll refund you — no questions asked.
 </p>
 
+<!-- Scrolling carousel image strip -->
+<div class="marquee-section" id="marqueeSection" style="display:none">
+  <div class="marquee-row row-left"  id="mqRow1"></div>
+  <div class="marquee-row row-right" id="mqRow2"></div>
+</div>
+
+<script>
+(async () => {
+  try {
+    const res  = await fetch('/api/library');
+    const data = await res.json();
+    const items = data.items || [];
+    if (items.length === 0) return;
+
+    // Collect all thumbnail URLs — use the first slide of each carousel
+    const thumbs = items.map(it => it.thumbnail).filter(Boolean);
+    if (thumbs.length === 0) return;
+
+    // Build enough copies to fill the viewport width (min 16 images per row)
+    const copies = Math.max(2, Math.ceil(32 / thumbs.length));
+    let pool = [];
+    for (let i = 0; i < copies; i++) pool = pool.concat(thumbs);
+
+    // Split pool in half — row 1 gets first half, row 2 gets second half
+    // (alternating single / compilation so both rows look different)
+    const singles = items.filter(it => it.format === 'single').map(it => it.thumbnail);
+    const comps   = items.filter(it => it.format === 'compilation').map(it => it.thumbnail);
+
+    function buildRow(urls, rowEl) {
+      // Duplicate for seamless infinite loop
+      const full = [];
+      while (full.length < 20) full.push(...urls);
+      // Two identical sets side by side → animation translates by -50%
+      [...full, ...full].forEach(src => {
+        const card = document.createElement('div');
+        card.className = 'mq-card';
+        card.innerHTML = `<img src="${src}" loading="lazy" alt="" />`;
+        rowEl.appendChild(card);
+      });
+    }
+
+    const row1 = document.getElementById('mqRow1');
+    const row2 = document.getElementById('mqRow2');
+    buildRow(comps.length  ? comps  : thumbs, row1);
+    buildRow(singles.length? singles: thumbs, row2);
+
+    document.getElementById('marqueeSection').style.display = 'flex';
+  } catch (e) {
+    console.warn('marquee:', e);
+  }
+})();
+</script>
+
 <script type="module">
 import { initializeApp }                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc }            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyANRIcHZsiB-nX2NebAeh_RVbC7I_K6u84",
@@ -289,13 +378,39 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db   = getFirestore(app);
 
-onAuthStateChanged(auth, user => {
+onAuthStateChanged(auth, async user => {
   const nav = document.getElementById("navRight");
   if (user) {
-    // If user already has an active plan, send them home
-    const stored = JSON.parse(localStorage.getItem("sc_user") || "{}");
-    if (stored.plan && stored.plan !== "") {
+    // ── Check Firestore for active plan (source of truth) ──
+    let hasActivePlan = false;
+    let planName      = "";
+    try {
+      let snap = await getDoc(doc(db, "users", user.email));
+      if (!snap.exists()) snap = await getDoc(doc(db, "users", user.uid));
+      if (snap.exists()) {
+        const d = snap.data();
+        planName      = d.plan   || "";
+        hasActivePlan = planName !== "" && d.status === "active";
+      }
+    } catch (e) {
+      // Firestore unavailable — fall back to localStorage cache
+      const stored = JSON.parse(localStorage.getItem("sc_user") || "{}");
+      planName      = stored.plan || "";
+      hasActivePlan = planName !== "";
+    }
+
+    // Update localStorage so other pages stay in sync
+    localStorage.setItem("sc_user", JSON.stringify({
+      name:  user.displayName || user.email.split("@")[0],
+      email: user.email,
+      photo: user.photoURL || "",
+      plan:  hasActivePlan ? planName : "",
+    }));
+
+    // Already on an active plan → go home
+    if (hasActivePlan) {
       window.location.href = "/";
       return;
     }
@@ -316,7 +431,8 @@ onAuthStateChanged(auth, user => {
     if (emailBasic) emailBasic.value = user.email;
     if (emailPro)   emailPro.value   = user.email;
   } else {
-    // Show Sign in button
+    // Not signed in
+    localStorage.removeItem("sc_user");
     nav.innerHTML = `<button class="nav-signin" onclick="window.location.href='/auth?redirect=/pricing'">Sign in</button>`;
   }
 });

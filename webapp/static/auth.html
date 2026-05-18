@@ -166,6 +166,8 @@ import { getAuth, signInWithPopup, GoogleAuthProvider,
          signInWithEmailAndPassword, createUserWithEmailAndPassword,
          updateProfile, sendPasswordResetEmail,
          onAuthStateChanged }    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc }
+                                 from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyANRIcHZsiB-nX2NebAeh_RVbC7I_K6u84",
@@ -178,6 +180,7 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db   = getFirestore(app);
 
 // Read plan + redirect from URL
 const params   = new URLSearchParams(location.search);
@@ -250,32 +253,61 @@ window.sendReset = async function() {
 async function linkAndRedirect(user) {
   const name = user.displayName || user.email.split("@")[0];
   let resolvedPlan = "";
+  let resolvedStatus = "";
+
   try {
-    const token = await user.getIdToken();
-    const res   = await fetch("/api/link-account", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ uid: user.uid, email: user.email, name, plan, token })
-    });
-    const data = await res.json().catch(() => ({}));
-    resolvedPlan = data.plan || plan || "";
+    // ── Read plan from Firestore — try email key first, then UID key ──────
+    let snap = await getDoc(doc(db, "users", user.email));
+    if (!snap.exists()) snap = await getDoc(doc(db, "users", user.uid));
+
+    if (snap.exists()) {
+      const d = snap.data();
+      resolvedPlan   = d.plan   || "";
+      resolvedStatus = d.status || "";
+    } else {
+      // Brand-new user — create their record (keyed by email for consistency)
+      await setDoc(doc(db, "users", user.email), {
+        uid:       user.uid,
+        email:     user.email,
+        name:      name,
+        plan:      "",
+        status:    "",
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // An active plan means plan is set AND status is "active"
+    const hasActivePlan = resolvedPlan && resolvedPlan !== "" &&
+                          resolvedStatus === "active";
+
     localStorage.setItem("sc_user", JSON.stringify({
-      name:  name,
-      email: user.email,
-      photo: user.photoURL || "",
-      plan:  resolvedPlan,
+      name:   name,
+      email:  user.email,
+      photo:  user.photoURL || "",
+      plan:   hasActivePlan ? resolvedPlan : "",
     }));
+
+    localStorage.removeItem("sc_pending_plan");
+
+    if (!hasActivePlan) {
+      // No active plan → choose a plan
+      window.location.href = "/pricing";
+    } else {
+      // Active plan → go to intended destination (never strand on /pricing)
+      const dest = (!redirect || redirect === "/pricing" || redirect === "")
+                   ? "/"
+                   : redirect;
+      window.location.href = dest;
+    }
+
   } catch (e) {
-    console.warn("link-account:", e);
-  }
-  localStorage.removeItem("sc_pending_plan");
-  if (!resolvedPlan || resolvedPlan === "") {
-    // No active plan → pick a plan first
+    console.error("linkAndRedirect:", e);
+    // Fallback: can't read Firestore — go home and let firebase-nav.js sort it out
+    localStorage.setItem("sc_user", JSON.stringify({
+      name: name, email: user.email, photo: user.photoURL || "", plan: "",
+    }));
+    localStorage.removeItem("sc_pending_plan");
     window.location.href = "/pricing";
-  } else {
-    // Active plan → go to intended destination, but never strand them on /pricing
-    const dest = (redirect === "/pricing" || redirect === "" || !redirect) ? "/" : redirect;
-    window.location.href = dest;
   }
 }
 

@@ -279,7 +279,33 @@ body {
   background: var(--accent); color: #fff; border-radius: 20px;
   padding: 2px 9px; font-size: 12px; font-weight: 700; margin-left: 8px;
 }
-.queue-actions { display: flex; gap: 10px; }
+.queue-actions { display: flex; align-items: center; gap: 10px; }
+
+/* ── Schedule Randomly toggle ── */
+.sr-toggle {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  cursor: pointer; user-select: none;
+  border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 14px;
+  background: var(--card2); transition: border-color .15s, color .15s;
+}
+.sr-toggle:hover { border-color: rgba(255,247,232,.25); color: var(--text); }
+.sr-toggle.active {
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(255,92,122,.08);
+}
+.sr-pip {
+  width: 28px; height: 16px; border-radius: 999px;
+  background: var(--border); position: relative; transition: background .2s; flex-shrink: 0;
+}
+.sr-pip::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #fff; transition: transform .2s;
+}
+.sr-toggle.active .sr-pip { background: var(--accent); }
+.sr-toggle.active .sr-pip::after { transform: translateX(12px); }
 
 /* ── Progress ── */
 .progress-wrap { margin-bottom: 18px; }
@@ -344,6 +370,42 @@ body {
 .acc-chip:hover:not(.selected) { border-color: rgba(255,247,232,.22); }
 .acc-chip img { width: 16px; height: 16px; border-radius: 50%; }
 .acc-chip .spi { font-size: 14px; width: 16px; text-align: center; line-height: 1; }
+
+/* ── Per-account scheduled times table ── */
+.at-table {
+  margin-top: 10px;
+  display: flex; flex-direction: column; gap: 5px;
+  max-height: 220px; overflow-y: auto;
+  padding-right: 2px;
+}
+.at-table::-webkit-scrollbar { width: 4px; }
+.at-table::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+.at-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; padding: 5px 10px;
+  background: rgba(255,247,232,0.04);
+  border: 1px solid rgba(255,247,232,0.07);
+  border-radius: 8px;
+}
+.at-name {
+  flex: 1; color: var(--text); font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.at-time {
+  color: var(--accent); font-size: 11px; font-weight: 600;
+  white-space: nowrap; flex-shrink: 0;
+}
+
+/* ── Per-account status badges (inside .at-row) ── */
+.at-status {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; flex-shrink: 0; white-space: nowrap;
+}
+.at-s-pending   { background: rgba(174,163,148,.12); color: var(--muted); }
+.at-s-uploading { background: rgba(255,92,122,.14);  color: var(--accent); }
+.at-s-done      { background: rgba(102,201,146,.14); color: var(--success); }
+.at-s-failed    { background: rgba(232,96,122,.14);  color: var(--error); }
 
 /* ── Status badges ── */
 .badge {
@@ -729,6 +791,20 @@ body {
         <span class="q-badge" id="qBadge">0</span>
       </div>
       <div class="queue-actions">
+        <div class="sr-toggle" id="srToggle" onclick="toggleScheduleRandomly()" title="When ON, each account gets a random +5–[max] min offset from the base scheduled time">
+          <span class="sr-pip"></span>
+          <span>Schedule Randomly</span>
+        </div>
+        <div id="srMaxWrap" style="display:none;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted)">
+          <span>up to</span>
+          <input id="srMaxInput" type="number" min="10" max="480" value="90"
+            style="width:58px;padding:5px 8px;border-radius:8px;border:1px solid var(--border);
+                   background:var(--card2);color:var(--text);font-size:12px;font-weight:700;text-align:center;outline:none"
+            oninput="updateRandomMax(this.value)"
+            onfocus="this.style.borderColor='var(--accent)'"
+            onblur="this.style.borderColor='var(--border)'">
+          <span>mins</span>
+        </div>
         <button class="btn btn-outline btn-sm" onclick="clearQueue()">Clear All</button>
         <button class="btn btn-success" id="schedBtn" onclick="scheduleAll()">
           🚀 Schedule All
@@ -1568,10 +1644,16 @@ function renderQueue() {
 
   S.posts.forEach(p => {
     byId(`cap-${p.id}`)?.addEventListener("input", e => { p.caption = e.target.value; });
-    byId(`dt-${p.id}`)?.addEventListener("change", e => { p.when = e.target.value; });
+    byId(`dt-${p.id}`)?.addEventListener("change", e => {
+      p.when = e.target.value;
+      if (scheduleRandomlyOn) { regenerateAccountTimes(p); refreshTimesTable(p); }
+    });
     byId(`rm-${p.id}`)?.addEventListener("click", () => removePost(p.id));
     S.integrations.forEach(i => {
-      byId(`chip-${p.id}-${i.id}`)?.addEventListener("click", () => toggleAcc(p, i.id));
+      byId(`chip-${p.id}-${i.id}`)?.addEventListener("click", () => {
+        toggleAcc(p, i.id);
+        if (scheduleRandomlyOn) { regenerateAccountTimes(p); refreshTimesTable(p); }
+      });
     });
   });
 }
@@ -1581,6 +1663,50 @@ function toggleAcc(post, intId) {
   if (idx === -1) post.accounts.push(intId);
   else            post.accounts.splice(idx, 1);
   byId(`chip-${post.id}-${intId}`)?.classList.toggle("selected");
+}
+
+// Renders the per-account scheduled time table (pre- and post-scheduling).
+function accountTimesHTML(p) {
+  const hasTimes = p.accountTimes && Object.keys(p.accountTimes).length > 0;
+
+  // No times yet and not randomised — show simple summary
+  if (!hasTimes && !scheduleRandomlyOn) {
+    return `<div style="font-size:13px;color:var(--muted);margin-top:6px">
+      📅 ${fmtDate(p.when)} &nbsp;·&nbsp; ${p.accounts.length} account(s)
+    </div>`;
+  }
+
+  const statuses = p.accountStatuses || {};
+  const rows = p.accounts.map(intId => {
+    const intObj  = S.integrations.find(i => i.id === intId) || {};
+    const name    = esc((intObj.name || intObj.identifier || "Account").slice(0, 22));
+    const pl      = platform(intObj);
+    const ic      = ICONS[pl] || ICONS.default;
+    const isoDate = hasTimes ? p.accountTimes[intId] : null;
+    const timeStr = isoDate
+      ? new Date(isoDate).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+      : fmtDate(p.when);
+    const pic = intObj.picture
+      ? `<img src="${intObj.picture}" style="width:18px;height:18px;border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`
+      : `<span style="font-size:13px">${ic}</span>`;
+
+    const st  = statuses[intId] || "pending";
+    const stBadge = {
+      pending:    `<span class="at-status at-s-pending">⏳</span>`,
+      uploading:  `<span class="at-status at-s-uploading"><span class="spin" style="font-size:10px">↻</span></span>`,
+      done:       `<span class="at-status at-s-done">✓ Done</span>`,
+      failed:     `<span class="at-status at-s-failed">✕ Failed</span>`,
+    }[st] || "";
+
+    return `<div class="at-row" id="at-row-${p.id}-${intId}">
+      ${pic}
+      <span class="at-name">${name}</span>
+      <span class="at-time">📅 ${timeStr}</span>
+      ${stBadge}
+    </div>`;
+  }).join("");
+
+  return `<div class="at-table" id="at-table-${p.id}">${rows}</div>`;
 }
 
 function accChipsHTML(p) {
@@ -1645,11 +1771,11 @@ function cardHTML(p) {
              value="${p.when}" min="${localDTStr(new Date())}">
       <div class="field-label" style="margin-top:14px">Post To</div>
       <div class="acc-grid">${accChipsHTML(p)}</div>
+      ${scheduleRandomlyOn && p.accounts.length ? `
+      <div class="field-label" style="margin-top:14px">Scheduled Times Per Account</div>
+      ${accountTimesHTML(p)}` : ""}
     </div>
-  </div>` : `
-  <div style="font-size:13px;color:var(--muted);margin-top:6px">
-    📅 ${fmtDate(p.when)} &nbsp;·&nbsp; ${p.accounts.length} account(s)
-  </div>`}
+  </div>` : accountTimesHTML(p)}
 </div>`;
   }
 
@@ -1686,11 +1812,11 @@ function cardHTML(p) {
              value="${p.when}" min="${localDTStr(new Date())}">
       <div class="field-label" style="margin-top:14px">Post To</div>
       <div class="acc-grid">${accChipsHTML(p)}</div>
+      ${scheduleRandomlyOn && p.accounts.length ? `
+      <div class="field-label" style="margin-top:14px">Scheduled Times Per Account</div>
+      ${accountTimesHTML(p)}` : ""}
     </div>
-  </div>` : `
-  <div style="font-size:13px;color:var(--muted);margin-top:4px">
-    📅 ${fmtDate(p.when)} &nbsp;·&nbsp; ${p.accounts.length} account(s)
-  </div>`}
+  </div>` : accountTimesHTML(p)}
 </div>`;
 }
 
@@ -1731,6 +1857,102 @@ function clearQueue() {
 }
 
 // ────────────────────────── Schedule all ───────────────────────────────────
+// ── Concurrency pool ────────────────────────────────────────────────────────
+// Runs `tasks` (array of async functions) with at most `limit` running at once.
+// Returns array of {status:"fulfilled"|"rejected", value, reason} in input order.
+async function runConcurrent(tasks, limit = 8) {
+  const results = new Array(tasks.length);
+  let next = 0;
+  async function worker() {
+    while (next < tasks.length) {
+      const i = next++;
+      try   { results[i] = { status: "fulfilled", value:  await tasks[i]() }; }
+      catch (e) { results[i] = { status: "rejected",  reason: e }; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+
+// ── Schedule Randomly toggle state ──────────────────────────────────────────
+let scheduleRandomlyOn = false;
+let randomMaxMins      = 90; // user-configurable upper bound
+
+function toggleScheduleRandomly() {
+  scheduleRandomlyOn = !scheduleRandomlyOn;
+  document.getElementById("srToggle").classList.toggle("active", scheduleRandomlyOn);
+  // Show/hide the max-minutes input
+  const inp = document.getElementById("srMaxWrap");
+  if (inp) inp.style.display = scheduleRandomlyOn ? "flex" : "none";
+  // Pre-generate times for all pending posts immediately
+  if (scheduleRandomlyOn) S.posts.forEach(p => regenerateAccountTimes(p));
+  else                    S.posts.forEach(p => { p.accountTimes = {}; p.accountStatuses = {}; });
+  renderQueue();
+}
+
+// Regenerate per-account random times for a post (call when toggle ON, or accs/time change)
+function regenerateAccountTimes(p) {
+  if (!scheduleRandomlyOn || !p.when || !p.accounts.length) return;
+  const base = new Date(p.when);
+  p.accountTimes    = p.accountTimes    || {};
+  p.accountStatuses = p.accountStatuses || {};
+  p.accounts.forEach(intId => {
+    // Only regenerate if not already scheduled
+    if (p.accountStatuses[intId] !== "done" && p.accountStatuses[intId] !== "failed") {
+      const mins = 5 + Math.floor(Math.random() * Math.max(1, randomMaxMins - 4));
+      p.accountTimes[intId] = new Date(base.getTime() + mins * 60_000).toISOString();
+    }
+  });
+}
+
+// Update max-mins value and regenerate all pending post times
+function updateRandomMax(val) {
+  const n = parseInt(val, 10);
+  if (!isNaN(n) && n >= 10) {
+    randomMaxMins = n;
+    S.posts.forEach(p => { regenerateAccountTimes(p); refreshTimesTable(p); });
+  }
+}
+
+// Re-render only the times table section inside a card (no full re-render)
+function refreshTimesTable(p) {
+  const tbl = byId(`at-table-${p.id}`);
+  if (tbl) {
+    tbl.outerHTML = accountTimesHTML(p);
+  } else {
+    // Table not mounted yet — check if editable card has the times section
+    const wrap = byId(`pc-${p.id}`);
+    if (wrap) {
+      // Find or create the times block inside card-body
+      let timesBlock = wrap.querySelector(".at-table");
+      if (timesBlock) timesBlock.outerHTML = accountTimesHTML(p);
+    }
+  }
+}
+
+// Update a single account row status live (avoids full card re-render)
+function setAccountStatus(p, intId, status) {
+  p.accountStatuses        = p.accountStatuses || {};
+  p.accountStatuses[intId] = status;
+  const row = byId(`at-row-${p.id}-${intId}`);
+  if (!row) return;
+  const stBadge = {
+    pending:   `<span class="at-status at-s-pending">⏳</span>`,
+    uploading: `<span class="at-status at-s-uploading"><span class="spin" style="font-size:10px">↻</span></span>`,
+    done:      `<span class="at-status at-s-done">✓ Done</span>`,
+    failed:    `<span class="at-status at-s-failed">✕ Failed</span>`,
+  }[status] || "";
+  const existing = row.querySelector(".at-status");
+  if (existing) existing.outerHTML = stBadge;
+  else row.insertAdjacentHTML("beforeend", stBadge);
+}
+
+// Random offset using current max; exact base time when toggle OFF.
+function staggeredIso(baseDate, intId, p) {
+  if (scheduleRandomlyOn && p?.accountTimes?.[intId]) return p.accountTimes[intId];
+  return baseDate.toISOString();
+}
+
 async function scheduleAll() {
   if (S.busy) return;
 
@@ -1902,57 +2124,89 @@ async function scheduleAll() {
         ? true
         : (p.file.type.startsWith("image/") || !(await videoHasAudio(p.url)));
 
-      const isoDate = new Date(p.when).toISOString();
+      const baseDate = new Date(p.when);
 
-      // ── POST 1: Instagram Reel ────────────────────────────────────────
-      // Audio is already baked into the MP4 by ffmpeg (random track from assets/insta_audio/).
-      // No audio_name / autoAddMusic needed — the file IS the audio source.
+      // If toggle is ON, times are already pre-generated; if OFF use base time.
+      // Ensure accountTimes + accountStatuses exist.
+      p.accountStatuses = {};
+      if (!scheduleRandomlyOn) {
+        p.accountTimes = {};
+        p.accounts.forEach(id => { p.accountTimes[id] = baseDate.toISOString(); });
+      } else if (!p.accountTimes || !Object.keys(p.accountTimes).length) {
+        regenerateAccountTimes(p);
+      }
+      // Mark all accounts as pending in UI
+      p.accounts.forEach(id => setAccountStatus(p, id, "pending"));
+
+      // Build per-account tasks — each wraps the API call AND updates row status
+      const scheduleTasks = [];
+
+      // ── POST 1: Instagram Reel tasks ──────────────────────────────────
       if (reelMediaItem && instaAccountIds.length > 0) {
         const reelSettings = {
-          post_type:              "post",   // Postiz only accepts "post" or "story"
+          post_type:              "post",
           content_posting_method: "DIRECT_POST",
           trial_reel:             false,
           title:                  title,
         };
-        console.log(`[instagram reel] scheduling ${instaAccountIds.length} account(s), settings:`, reelSettings);
-        await api("POST", "/posts", {
-          type: "schedule",
-          date: isoDate,
-          shortLink: false,
-          tags: [],
-          posts: instaAccountIds.map(intId => ({
-            integration: { id: intId },
-            value: [{ content: p.caption, image: [reelMediaItem] }],
-            settings: reelSettings,
-          })),
-        });
+        for (const intId of instaAccountIds) {
+          const isoDate = p.accountTimes[intId] || baseDate.toISOString();
+          scheduleTasks.push(async () => {
+            setAccountStatus(p, intId, "uploading");
+            await api("POST", "/posts", {
+              type: "schedule", date: isoDate, shortLink: false, tags: [],
+              posts: [{ integration: { id: intId },
+                        value: [{ content: p.caption, image: [reelMediaItem] }],
+                        settings: reelSettings }],
+            });
+            setAccountStatus(p, intId, "done");
+          });
+        }
       }
 
-      // ── POST 2: other platforms + Instagram carousel fallback ─────────
+      // ── POST 2: other platforms + Instagram carousel fallback tasks ───
       const accountsForCarousel = [
         ...otherAccountIds,
         ...(instaAccountIds.length > 0 && !reelMediaItem ? instaAccountIds : []),
       ];
-      if (accountsForCarousel.length > 0) {
-        await api("POST", "/posts", {
-          type: "schedule",
-          date: isoDate,
-          shortLink: false,
-          tags: [],
-          posts: accountsForCarousel.map(intId => {
-            const intObj = S.integrations.find(i => i.id === intId) || {};
-            const pl_    = platform(intObj);
-            let content  = p.caption;
-            if (pl_.includes("youtube") && isVideo && !content.includes("#Shorts")) {
-              content = (content + "\n\n#Shorts").trim();
-            }
-            return {
-              integration: { id: intId },
-              value: [{ content, image: mediaItems }],
-              settings: buildSettings(intId, title, needsMusic, isCarousel, isVideo)
-            };
-          })
+      for (const intId of accountsForCarousel) {
+        const intObj  = S.integrations.find(i => i.id === intId) || {};
+        const pl_     = platform(intObj);
+        let content   = p.caption;
+        if (pl_.includes("youtube") && isVideo && !content.includes("#Shorts")) {
+          content = (content + "\n\n#Shorts").trim();
+        }
+        const isoDate = p.accountTimes[intId] || baseDate.toISOString();
+        scheduleTasks.push(async () => {
+          setAccountStatus(p, intId, "uploading");
+          await api("POST", "/posts", {
+            type: "schedule", date: isoDate, shortLink: false, tags: [],
+            posts: [{ integration: { id: intId },
+                      value: [{ content, image: mediaItems }],
+                      settings: buildSettings(intId, title, needsMusic, isCarousel, isVideo) }],
+          });
+          setAccountStatus(p, intId, "done");
         });
+      }
+
+      // Fire all concurrently (max 8); mark failures live
+      label.textContent = `Scheduling to ${scheduleTasks.length} account(s)…`;
+      const allAccountIds = [...instaAccountIds, ...accountsForCarousel];
+
+      // Wrap each task to catch per-account errors and mark them failed
+      const wrappedTasks = scheduleTasks.map((task, i) => async () => {
+        try { await task(); }
+        catch (e) {
+          const accId = allAccountIds[i];
+          if (accId) setAccountStatus(p, accId, "failed");
+          throw e;
+        }
+      });
+
+      const schedResults = await runConcurrent(wrappedTasks, 8);
+      const schedFailed  = schedResults.filter(r => r.status === "rejected");
+      if (schedFailed.length) {
+        toast(`⚠ ${postLabel}: ${schedFailed.length}/${scheduleTasks.length} accounts failed`, "");
       }
 
       setStatus(p, "done");
@@ -2333,6 +2587,8 @@ window.makePostFromFiles           = makePostFromFiles;
 window.buildSlideshowPostFromPaths = buildSlideshowPostFromPaths;
 window.scheduleAll                 = scheduleAll;
 window.clearQueue                  = clearQueue;
+window.toggleScheduleRandomly      = toggleScheduleRandomly;
+window.updateRandomMax             = updateRandomMax;
 window.toggleDefaultAcc            = toggleDefaultAcc;
 window.selectAllChannels           = selectAllChannels;
 window.selectNoneChannels          = selectNoneChannels;
