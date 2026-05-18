@@ -47,16 +47,29 @@ COMP_OUT = os.path.join(ROOT, "output_compilations")
 # from the API's perspective.
 SINGLE_SAMPLES = os.path.join(ROOT, "Single recipes")
 
+# Asset-folder paths (checked after the above as additional sources)
+ASSETS_SINGLE = os.path.join(ROOT, "assets", "Single", "Single recipes")
+ASSETS_COMP   = os.path.join(ROOT, "assets", "Compilation", "output_compilations")
+
 # How many items to surface per format in /api/library. The folders can grow
 # to hundreds of items; the UI rails only need a handful.
-LIBRARY_LIMIT_PER_FORMAT = 10
+LIBRARY_LIMIT_PER_FORMAT = 20
 
 
 def _resolve_single_dir(slug: str) -> Optional[str]:
     """Find which directory holds this single-recipe slug. Real generations
-    land in `output/`, bundled samples live in `Single recipes/`. Prefer real
-    content if both exist for the same slug."""
-    for base in (SINGLE_OUT, SINGLE_SAMPLES):
+    land in `output/`, bundled samples live in `Single recipes/` and
+    `assets/Single/Single recipes/`. Prefer real content if both exist."""
+    for base in (SINGLE_OUT, SINGLE_SAMPLES, ASSETS_SINGLE):
+        p = os.path.join(base, slug)
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def _resolve_comp_dir(slug: str) -> Optional[str]:
+    """Find which directory holds this compilation slug."""
+    for base in (COMP_OUT, ASSETS_COMP):
         p = os.path.join(base, slug)
         if os.path.isdir(p):
             return p
@@ -681,10 +694,12 @@ def api_library(format: Optional[str] = None):
 
     items = []
     if format in (None, "single"):
-        # Real generations first, bundled samples second. De-dupe by slug.
+        # Real generations first, bundled samples second, then assets. De-dupe by slug.
         seen = set()
         merged = []
-        for entry in _scan_singles(SINGLE_OUT) + _scan_singles(SINGLE_SAMPLES):
+        for entry in (_scan_singles(SINGLE_OUT)
+                      + _scan_singles(SINGLE_SAMPLES)
+                      + _scan_singles(ASSETS_SINGLE)):
             if entry["slug"] in seen:
                 continue
             seen.add(entry["slug"])
@@ -693,12 +708,14 @@ def api_library(format: Optional[str] = None):
         items.extend(merged[:LIBRARY_LIMIT_PER_FORMAT])
 
     if format in (None, "compilation"):
-        comp_items = []
-        if os.path.isdir(COMP_OUT):
-            for d in os.listdir(COMP_OUT):
+        def _scan_comps(base_dir: str):
+            out = []
+            if not os.path.isdir(base_dir):
+                return out
+            for d in os.listdir(base_dir):
                 if d.startswith("."):
                     continue
-                p = os.path.join(COMP_OUT, d)
+                p = os.path.join(base_dir, d)
                 if not os.path.isdir(p):
                     continue
                 jpath = os.path.join(p, f"{d}.json")
@@ -712,7 +729,7 @@ def api_library(format: Optional[str] = None):
                     spec = json.load(open(jpath))
                 except Exception:
                     continue
-                comp_items.append({
+                out.append({
                     "format": "compilation",
                     "slug": d,
                     "title": spec.get("hook_caption", d),
@@ -721,6 +738,15 @@ def api_library(format: Optional[str] = None):
                     "thumbnail": f"/images/compilation/{d}/{slides[0]}",
                     "modified_at": int(os.path.getmtime(slides_dir)),
                 })
+            return out
+
+        seen_comp = set()
+        comp_items = []
+        for entry in _scan_comps(COMP_OUT) + _scan_comps(ASSETS_COMP):
+            if entry["slug"] in seen_comp:
+                continue
+            seen_comp.add(entry["slug"])
+            comp_items.append(entry)
         comp_items.sort(key=lambda x: x["modified_at"], reverse=True)
         items.extend(comp_items[:LIBRARY_LIMIT_PER_FORMAT])
 
@@ -735,7 +761,9 @@ def api_preview(format: str, slug: str):
         if cdir is None:
             raise HTTPException(404, "slug not found")
     elif format == "compilation":
-        cdir = os.path.join(COMP_OUT, slug)
+        cdir = _resolve_comp_dir(slug)
+        if cdir is None:
+            raise HTTPException(404, "slug not found")
     else:
         raise HTTPException(400, "bad format")
     if not os.path.isdir(cdir):
@@ -783,7 +811,8 @@ def serve_image(format: str, slug: str, filename: str):
         base = _resolve_single_dir(slug)
         path = os.path.join(base, "slides", filename) if base else None
     elif format == "compilation":
-        path = os.path.join(COMP_OUT, slug, "slides", filename)
+        base = _resolve_comp_dir(slug)
+        path = os.path.join(base, "slides", filename) if base else None
     else:
         raise HTTPException(400, "bad format")
     if not path or not os.path.isfile(path):
