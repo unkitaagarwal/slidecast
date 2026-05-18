@@ -11,6 +11,7 @@ Thumbs.db
 # ===== Secrets =====
 .env
 .env.local
+upload_assets_to_firebase.py
 
 # ===== Local Python venv — NEVER commit this =====
 .venv/
@@ -27,7 +28,10 @@ output_templates/
 ready_to_post/
 ready_to_post_instagram/
 viral_trending_10/
-Single recipes/
+
+# Bundled carousel assets (large; served from Firebase in prod)
+assets/Compilation/
+assets/Single/Single recipes/
 
 # Brand assets uploaded at runtime (per-job, transient)
 webapp/uploads/brand_logos/*
