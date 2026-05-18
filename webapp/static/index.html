@@ -41,7 +41,7 @@
       </nav>
     </div>
   </header>
-  <script type="module" src="/static/firebase-nav.js"></script>
+  <script type="module" src="/static/firebase-nav.js?v=2"></script>
 
   <!-- Hero -->
   <section class="hero">
@@ -518,5 +518,86 @@
   </footer>
 
   <script src="/static/app.js?v=8"></script>
+
+  <!-- ── Access gate: redirect to /pricing if no active plan ── -->
+  <script type="module">
+  import { initializeApp }        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey:            "AIzaSyANRIcHZsiB-nX2NebAeh_RVbC7I_K6u84",
+    authDomain:        "slidecast-75f5c.firebaseapp.com",
+    projectId:         "slidecast-75f5c",
+    storageBucket:     "slidecast-75f5c.firebasestorage.app",
+    messagingSenderId: "829361595060",
+    appId:             "1:829361595060:web:31526e2f798ee8aba6ede1",
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  // Selectors for every interactive element that should be gated
+  const GATED = [
+    '.btn-primary', '.btn-ghost', '.nav-cta',
+    '.fmt-card', '.chip', '#generate-btn', '#tpl-generate',
+    '#tk-connect-btn', '#copy-caption', '#tracking-refresh',
+    '.tk-act', '.rail-arrow',
+  ].join(',');
+
+  let hasPlan = false; // will be set once Firebase resolves
+
+  // Toast shown when user tries to interact without a plan
+  function showGateToast() {
+    if (document.getElementById('sc-gate-toast')) return;
+    const toast = document.createElement('div');
+    toast.id = 'sc-gate-toast';
+    toast.innerHTML = `
+      <style>
+        #sc-gate-toast {
+          position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+          z-index: 9999; display: flex; align-items: center; gap: 14px;
+          background: #1a1210; border: 1px solid rgba(255,92,122,0.4);
+          border-radius: 14px; padding: 14px 22px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+          font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+          animation: scToastIn 0.25s ease;
+        }
+        @keyframes scToastIn { from { opacity:0; transform: translateX(-50%) translateY(12px); } }
+        #sc-gate-toast p { font-size: 0.9rem; color: #fbf6ec; margin: 0; }
+        #sc-gate-toast a {
+          flex-shrink: 0; background: #ff5c7a; color: #fff;
+          font-size: 0.88rem; font-weight: 700;
+          padding: 8px 18px; border-radius: 99px; text-decoration: none;
+          transition: opacity 0.15s;
+        }
+        #sc-gate-toast a:hover { opacity: 0.85; }
+      </style>
+      <p>You need an active plan to use this feature.</p>
+      <a href="/pricing">Choose a plan →</a>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  }
+
+  // Intercept clicks on gated elements
+  document.addEventListener('click', e => {
+    if (hasPlan) return; // signed in with plan — allow everything
+    // Always allow nav user slot (Sign in / Sign up button)
+    if (e.target.closest('#nav-user-slot')) return;
+    // Always allow plain links (nav anchors, pricing, etc.)
+    if (e.target.closest('a')) return;
+    const target = e.target.closest(GATED);
+    if (!target) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    showGateToast();
+  }, true); // capture phase so it fires before app.js handlers
+
+  onAuthStateChanged(auth, user => {
+    if (!user) { hasPlan = false; return; }
+    const stored = JSON.parse(localStorage.getItem('sc_user') || '{}');
+    hasPlan = !!(stored.plan && stored.plan !== '');
+  });
+  </script>
 </body>
 </html>
