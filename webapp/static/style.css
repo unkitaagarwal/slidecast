@@ -741,18 +741,17 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 
 .rail {
   display: flex; gap: 12px;
-  overflow-x: auto; overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scroll-behavior: smooth;
+  overflow-x: scroll; overflow-y: hidden;
+  scroll-snap-type: none;
+  scroll-behavior: auto; /* JS controls scrolling — no CSS smooth interference */
   padding-bottom: 6px;
-  /* Subtle fade on the right edge to hint at scroll */
-  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 60px), transparent 100%);
-          mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 60px), transparent 100%);
+  /* Fade edges to hint at infinite scroll */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%);
 }
-.rail::-webkit-scrollbar { height: 8px; }
-.rail::-webkit-scrollbar-track { background: transparent; }
-.rail::-webkit-scrollbar-thumb { background: var(--panel-2); border-radius: 999px; }
-.rail::-webkit-scrollbar-thumb:hover { background: var(--panel-3); }
+/* Hide scrollbar — the marquee handles navigation */
+.rail::-webkit-scrollbar { display: none; }
+.rail { -ms-overflow-style: none; scrollbar-width: none; }
 
 .lib-card {
   flex: 0 0 calc((100% - 108px) / 10);   /* 10 visible at a time on desktop */

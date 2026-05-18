@@ -1,4 +1,4 @@
-"""RecipeVault Studio — local web app.
+"""Slidecast Studio — local web app.
 
 Runs a FastAPI server that wraps both pipelines:
   - "single"      : single-recipe 10-slide carousel (pipeline/)
@@ -42,6 +42,52 @@ ROOT = os.path.dirname(HERE)
 STATIC = os.path.join(HERE, "static")
 SINGLE_OUT = os.path.join(ROOT, "output")
 COMP_OUT = os.path.join(ROOT, "output_compilations")
+# Additional bundled single-recipe samples — kept separate from `output/` so
+# user-generated content and ship-with-the-repo demos can coexist. Read-only
+# from the API's perspective.
+SINGLE_SAMPLES = os.path.join(ROOT, "Single recipes")
+
+# Asset-folder paths (checked after the above as additional sources)
+ASSETS_SINGLE = os.path.join(ROOT, "assets", "Single", "Single recipes")
+ASSETS_COMP   = os.path.join(ROOT, "assets", "Compilation", "output_compilations")
+
+# Firebase Storage — images uploaded via upload_assets_to_firebase.py are
+# served directly from the CDN instead of the local filesystem.
+FIREBASE_STORAGE_BUCKET = "slidecast-75f5c.firebasestorage.app"
+FIREBASE_STORAGE_BASE   = f"https://storage.googleapis.com/{FIREBASE_STORAGE_BUCKET}"
+
+def _firebase_url(format_name: str, slug: str, filename: str) -> str:
+    """Return a Firebase Storage public CDN URL for a carousel slide."""
+    return f"{FIREBASE_STORAGE_BASE}/carousels/{format_name}/{slug}/slides/{filename}"
+
+def _is_assets_source(base_dir: str) -> bool:
+    """True when the base directory is one of the bundled assets folders
+    whose images have been uploaded to Firebase Storage."""
+    return base_dir in (ASSETS_SINGLE, ASSETS_COMP)
+
+# How many items to surface per format in /api/library. The folders can grow
+# to hundreds of items; the UI rails only need a handful.
+LIBRARY_LIMIT_PER_FORMAT = 20
+
+
+def _resolve_single_dir(slug: str) -> Optional[str]:
+    """Find which directory holds this single-recipe slug. Real generations
+    land in `output/`, bundled samples live in `Single recipes/` and
+    `assets/Single/Single recipes/`. Prefer real content if both exist."""
+    for base in (SINGLE_OUT, SINGLE_SAMPLES, ASSETS_SINGLE):
+        p = os.path.join(base, slug)
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def _resolve_comp_dir(slug: str) -> Optional[str]:
+    """Find which directory holds this compilation slug."""
+    for base in (COMP_OUT, ASSETS_COMP):
+        p = os.path.join(base, slug)
+        if os.path.isdir(p):
+            return p
+    return None
 BRANDING_PATH     = os.path.join(HERE, "branding.json")
 POSTIZ_API        = "https://api.postiz.com/public/v1"
 STITCH_OUTPUT_DIR = os.path.expanduser("~/Documents/stitched_profile_videos")
@@ -53,15 +99,15 @@ INSTA_AUDIO_DIR = os.path.join(HERE, "..", "assets", "insta_audio")
 
 
 _DEFAULT_BRANDING = {
-    "brand_name":      "RecipeVault",
+    "brand_name":      "Slidecast",
     "studio_name":     "Studio",
-    "tagline_html":    "Generate viral<br/>TikTok carousels<br/>in <em>30 seconds.</em>",
-    "subtagline":      "Pick a format. Type a vibe. Get a 10–12 slide carousel with food-magazine photos, a parchment recipe page, and a built-in app CTA — ready to drop into your TikTok inbox.",
-    "eyebrow":         "For RecipeVault creators",
+    "tagline_html":    "Ship <em>30 days</em> of content<br/>across <em>30 accounts</em><br/>in <em>30 seconds.</em>",
+    "subtagline":      "The fastest way to turn a one-line brief into a finished carousel — then auto-publish it to every TikTok and Instagram account you own. Captions and hashtags included. Free to start.",
+    "eyebrow":         "For creators running multiple accounts",
     "primary_color":   "#ff5c7a",
     "secondary_color": "#f4c47a",
     "tiktok_handle":   "@nutrilens.ai",
-    "cta_phrase":      "Save these recipes easily with RecipeVault app! Link in bio",
+    "cta_phrase":      "Made with Slidecast — generate carousels & auto-post to all your accounts. Link in bio",
     "footer_meta":     "runs locally · uses your Gemini key from .env",
 }
 
@@ -410,75 +456,6 @@ def _load_env() -> None:
 
 _load_env()
 
-# ---------------------------------------------------------------------------
-# Stripe setup
-# ---------------------------------------------------------------------------
-
-import stripe as _stripe  # type: ignore
-
-_stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-STRIPE_PUBLISHABLE_KEY  = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
-STRIPE_WEBHOOK_SECRET   = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PRICE_ID_BASIC   = os.environ.get("STRIPE_PRICE_ID_BASIC", "")   # $29.99/mo
-STRIPE_PRICE_ID_PRO     = os.environ.get("STRIPE_PRICE_ID_PRO",   "")   # $69.99/mo
-STRIPE_SUCCESS_URL      = os.environ.get("STRIPE_SUCCESS_URL", "")
-STRIPE_CANCEL_URL       = os.environ.get("STRIPE_CANCEL_URL",  "")
-
-# ---------------------------------------------------------------------------
-# Firebase Admin + Firestore
-# ---------------------------------------------------------------------------
-import firebase_admin as _fb_admin                          # type: ignore
-from firebase_admin import credentials as _fb_creds         # type: ignore
-from firebase_admin import firestore as _fb_firestore       # type: ignore
-
-def _init_firebase():
-    if _fb_admin._apps:
-        return  # already initialised
-    cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
-    if cred_path and os.path.isfile(cred_path):
-        cred = _fb_creds.Certificate(cred_path)
-        _fb_admin.initialize_app(cred)
-        print(f"[firebase] initialised with service account: {cred_path}")
-    else:
-        # Fallback: try Application Default Credentials (works on GCP/Cloud Run)
-        _fb_admin.initialize_app()
-        print("[firebase] initialised with Application Default Credentials")
-
-try:
-    _init_firebase()
-    _db = _fb_firestore.client()
-    _USERS_COL = "users"
-    print("[firebase] Firestore connected ✓")
-except Exception as _fb_err:
-    print(f"[firebase] WARNING: Firestore unavailable — {_fb_err}")
-    _db = None
-    _USERS_COL = "users"
-
-
-def _get_user(email: str) -> dict:
-    """Fetch user document from Firestore. Returns {} if not found."""
-    if not _db:
-        return {}
-    try:
-        doc = _db.collection(_USERS_COL).document(email.lower().strip()).get()
-        return doc.to_dict() or {} if doc.exists else {}
-    except Exception as e:
-        print(f"[firestore] get_user error: {e}")
-        return {}
-
-def _set_user(email: str, data: dict) -> None:
-    """Upsert user document in Firestore (merges with existing fields)."""
-    if not _db:
-        return
-    try:
-        _db.collection(_USERS_COL).document(email.lower().strip()).set(data, merge=True)
-    except Exception as e:
-        print(f"[firestore] set_user error: {e}")
-
-def _is_paid(email: str) -> bool:
-    entry = _get_user(email)
-    return entry.get("status") == "active"
-
 # Lazy imports so the server starts even if a pipeline file has issues
 def _import_single():
     import run as _single_run  # pipeline/run.py
@@ -562,7 +539,9 @@ def _run_single(job_id: str, brief: str):
                     message=f"Failed: {e}", error=str(e))
 
 
-def _run_compilation(job_id: str, theme: str):
+def _run_compilation(job_id: str, theme: str,
+                     brand_card_path: Optional[str] = None,
+                     brand_name: Optional[str] = None):
     try:
         JOBS.update(job_id, status="running",
                     message="Generating 5 recipes with Gemini…")
@@ -594,12 +573,46 @@ from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-app = FastAPI(title="RecipeVault Studio")
+app = FastAPI(title="Slidecast Studio")
 
 
 class GenerateBody(BaseModel):
     format: str  # "single" or "compilation"
     input: str   # brief or theme
+    # Optional brand override (paid users only — frontend gates this).
+    # When present the compilation pipeline swaps in the user's brand
+    # image and brand name on the final CTA slide. Free / anon users
+    # leave this unset and see the default Slidecast CTA.
+    brand: Optional[dict] = None  # { name, cta_text, image_data_url }
+
+
+# Where uploaded brand-kit images are stashed (paid-user CTA overrides).
+BRAND_KIT_DIR = os.path.join(HERE, "uploads", "brand_kit")
+os.makedirs(BRAND_KIT_DIR, exist_ok=True)
+
+
+def _save_brand_image_from_data_url(data_url: str, job_id: str) -> Optional[str]:
+    """Decode a data:image/...;base64,XXX URL to a real file on disk.
+    Returns the file path, or None if input is unusable."""
+    if not data_url or not data_url.startswith("data:image/"):
+        return None
+    import base64
+    header, _, b64 = data_url.partition(",")
+    if not b64:
+        return None
+    ext = ".png"
+    if "jpeg" in header or "jpg" in header:
+        ext = ".jpg"
+    elif "webp" in header:
+        ext = ".webp"
+    path = os.path.join(BRAND_KIT_DIR, f"{job_id}{ext}")
+    try:
+        with open(path, "wb") as f:
+            f.write(base64.b64decode(b64))
+        return path
+    except Exception as e:
+        print(f"[brand-kit] decode failed: {e}")
+        return None
 
 
 @app.post("/api/generate")
@@ -611,10 +624,24 @@ def api_generate(body: GenerateBody):
         raise HTTPException(400, "input is required")
 
     job_id = JOBS.create(body.format, {"input": text})
+
+    # Extract optional brand override (paid users send this; free/anon don't)
+    brand_card_path = None
+    brand_name = None
+    if body.brand:
+        brand_name = (body.brand.get("name") or "").strip() or None
+        data_url = body.brand.get("image_data_url")
+        if data_url:
+            brand_card_path = _save_brand_image_from_data_url(data_url, job_id)
+
     if body.format == "single":
+        # Single-recipe pipeline doesn't yet accept brand overrides — passes
+        # silently for now; harmless because frontend currently only gates the
+        # compilation flow through brand kit anyway.
         EXECUTOR.submit(_run_single, job_id, text)
     else:
-        EXECUTOR.submit(_run_compilation, job_id, text)
+        EXECUTOR.submit(_run_compilation, job_id, text,
+                        brand_card_path, brand_name)
     return {"job_id": job_id}
 
 
@@ -642,123 +669,244 @@ def api_branding():
     return _load_branding()
 
 
+def _firebase_list_slugs(format_name: str) -> list:
+    """Query Firebase Storage REST API to list all carousel slugs for a format.
+    Returns list of slug strings. No auth needed — bucket is public read."""
+    try:
+        prefix   = _urlparse.quote(f"carousels/{format_name}/", safe="")
+        url      = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
+                    f"/o?prefix={prefix}&delimiter=%2F")
+        req      = _urlreq.Request(url, headers={"Accept": "application/json"})
+        with _urlreq.urlopen(req, timeout=8) as r:
+            data     = json.loads(r.read().decode())
+        prefixes = data.get("prefixes", [])
+        # Each prefix looks like "carousels/single/slug/" — extract the slug part
+        slugs = []
+        for p in prefixes:
+            parts = p.rstrip("/").split("/")
+            if len(parts) >= 3:
+                slugs.append(parts[2])
+        return slugs
+    except Exception as e:
+        print(f"[library] Firebase list error ({format_name}): {e}")
+        return []
+
+
+def _firebase_list_slides(format_name: str, slug: str) -> list:
+    """List all slide filenames for a given carousel slug in Firebase Storage."""
+    try:
+        prefix = _urlparse.quote(f"carousels/{format_name}/{slug}/slides/", safe="")
+        url    = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
+                  f"/o?prefix={prefix}")
+        req    = _urlreq.Request(url, headers={"Accept": "application/json"})
+        with _urlreq.urlopen(req, timeout=8) as r:
+            data   = json.loads(r.read().decode())
+        items  = data.get("items", [])
+        # Extract just the filename from the full storage path
+        fnames = sorted(
+            item["name"].split("/")[-1]
+            for item in items
+            if item["name"].endswith(".png")
+        )
+        return fnames
+    except Exception as e:
+        print(f"[library] Firebase slides error ({format_name}/{slug}): {e}")
+        return []
+
+
+def _slug_to_title(slug: str) -> str:
+    """Convert a slug like 'thai_tiktok_feast' to 'Thai Tiktok Feast'."""
+    return slug.replace("_", " ").title()
+
+
 @app.get("/api/library")
 def api_library(format: Optional[str] = None):
-    """List all generated carousels."""
+    """List all generated carousels — local first, then Firebase Storage."""
+    def _scan_local(base_dir: str, fmt: str):
+        out = []
+        if not os.path.isdir(base_dir):
+            return out
+        for d in os.listdir(base_dir):
+            if d.startswith(".") or d.startswith("_"):
+                continue
+            p = os.path.join(base_dir, d)
+            if not os.path.isdir(p):
+                continue
+            jpath     = os.path.join(p, f"{d}.json")
+            slides_dir = os.path.join(p, "slides")
+            if not os.path.exists(jpath) or not os.path.isdir(slides_dir):
+                continue
+            slides = sorted(f for f in os.listdir(slides_dir) if f.endswith(".png"))
+            if not slides:
+                continue
+            try:
+                spec = json.load(open(jpath))
+            except Exception:
+                continue
+            out.append({
+                "format":     fmt,
+                "slug":       d,
+                "title":      spec.get("title") or spec.get("hook_caption") or _slug_to_title(d),
+                "subtitle":   (spec.get("short_pitch") or
+                               ", ".join(r.get("title","") for r in spec.get("recipes",[]))[:140]),
+                "slide_count": len(slides),
+                "thumbnail":  f"/images/{fmt}/{d}/{slides[0]}",
+                "modified_at": int(os.path.getmtime(slides_dir)),
+            })
+        return out
+
+    def _scan_firebase(fmt: str, seen_slugs: set):
+        """Pull carousel list straight from Firebase Storage."""
+        out   = []
+        slugs = _firebase_list_slugs(fmt)
+        for slug in slugs:
+            if slug in seen_slugs:
+                continue
+            slides = _firebase_list_slides(fmt, slug)
+            if not slides:
+                continue
+            thumb = _firebase_url(fmt, slug, slides[0])
+            out.append({
+                "format":      fmt,
+                "slug":        slug,
+                "title":       _slug_to_title(slug),
+                "subtitle":    "",
+                "slide_count": len(slides),
+                "thumbnail":   thumb,
+                "slides_base": "firebase",
+                "modified_at": 0,
+            })
+        return out
+
     items = []
+
     if format in (None, "single"):
-        if os.path.isdir(SINGLE_OUT):
-            for d in sorted(os.listdir(SINGLE_OUT), reverse=True):
-                p = os.path.join(SINGLE_OUT, d)
-                if not os.path.isdir(p):
-                    continue
-                jpath = os.path.join(p, f"{d}.json")
-                slides_dir = os.path.join(p, "slides")
-                if not os.path.exists(jpath) or not os.path.isdir(slides_dir):
-                    continue
-                slides = sorted(f for f in os.listdir(slides_dir) if f.endswith(".png"))
-                if not slides:
-                    continue
-                try:
-                    spec = json.load(open(jpath))
-                except Exception:
-                    continue
-                items.append({
-                    "format": "single",
-                    "slug": d,
-                    "title": spec.get("title", d),
-                    "subtitle": spec.get("short_pitch", ""),
-                    "slide_count": len(slides),
-                    "thumbnail": f"/images/single/{d}/{slides[0]}",
-                    "modified_at": int(os.path.getmtime(slides_dir)),
-                })
+        seen = set()
+        merged = []
+        for entry in (_scan_local(SINGLE_OUT, "single")
+                      + _scan_local(SINGLE_SAMPLES, "single")):
+            if entry["slug"] not in seen:
+                seen.add(entry["slug"])
+                merged.append(entry)
+        # Fill remaining slots from Firebase Storage
+        merged += _scan_firebase("single", seen)
+        merged.sort(key=lambda x: x["modified_at"], reverse=True)
+        items.extend(merged[:LIBRARY_LIMIT_PER_FORMAT])
+
     if format in (None, "compilation"):
-        if os.path.isdir(COMP_OUT):
-            for d in sorted(os.listdir(COMP_OUT), reverse=True):
-                p = os.path.join(COMP_OUT, d)
-                if not os.path.isdir(p):
-                    continue
-                jpath = os.path.join(p, f"{d}.json")
-                slides_dir = os.path.join(p, "slides")
-                if not os.path.exists(jpath) or not os.path.isdir(slides_dir):
-                    continue
-                slides = sorted(f for f in os.listdir(slides_dir) if f.endswith(".png"))
-                if not slides:
-                    continue
-                try:
-                    spec = json.load(open(jpath))
-                except Exception:
-                    continue
-                items.append({
-                    "format": "compilation",
-                    "slug": d,
-                    "title": spec.get("hook_caption", d),
-                    "subtitle": ", ".join(r.get("title", "") for r in spec.get("recipes", []))[:140],
-                    "slide_count": len(slides),
-                    "thumbnail": f"/images/compilation/{d}/{slides[0]}",
-                    "modified_at": int(os.path.getmtime(slides_dir)),
-                })
-    items.sort(key=lambda x: x["modified_at"], reverse=True)
+        seen_c = set()
+        comp   = []
+        for entry in _scan_local(COMP_OUT, "compilation"):
+            if entry["slug"] not in seen_c:
+                seen_c.add(entry["slug"])
+                comp.append(entry)
+        comp += _scan_firebase("compilation", seen_c)
+        comp.sort(key=lambda x: x["modified_at"], reverse=True)
+        items.extend(comp[:LIBRARY_LIMIT_PER_FORMAT])
+
     return {"items": items}
+
+
+@app.get("/api/debug-paths")
+def api_debug_paths():
+    """Quick diagnostic — check which asset folders exist and how many carousels they contain."""
+    def count_slugs(path):
+        if not os.path.isdir(path):
+            return {"exists": False, "path": path}
+        slugs = [d for d in os.listdir(path)
+                 if os.path.isdir(os.path.join(path, d)) and not d.startswith(".")]
+        return {"exists": True, "path": path, "count": len(slugs), "slugs": slugs}
+
+    return {
+        "SINGLE_OUT":     count_slugs(SINGLE_OUT),
+        "SINGLE_SAMPLES": count_slugs(SINGLE_SAMPLES),
+        "ASSETS_SINGLE":  count_slugs(ASSETS_SINGLE),
+        "COMP_OUT":       count_slugs(COMP_OUT),
+        "ASSETS_COMP":    count_slugs(ASSETS_COMP),
+    }
 
 
 @app.get("/api/preview/{format}/{slug}")
 def api_preview(format: str, slug: str):
-    """Return slides + computed caption for a saved carousel."""
-    if format == "single":
-        cdir = os.path.join(SINGLE_OUT, slug)
-    elif format == "compilation":
-        cdir = os.path.join(COMP_OUT, slug)
-    else:
+    """Return slides + computed caption for a saved carousel.
+    Falls back to Firebase Storage when local files are absent."""
+    if format not in ("single", "compilation"):
         raise HTTPException(400, "bad format")
-    if not os.path.isdir(cdir):
+
+    # ── 1. Try local filesystem ──────────────────────────────────────────────
+    cdir = (_resolve_single_dir(slug) if format == "single"
+            else _resolve_comp_dir(slug))
+
+    if cdir and os.path.isdir(cdir):
+        jpath = os.path.join(cdir, f"{slug}.json")
+        if not os.path.exists(jpath):
+            raise HTTPException(404, "spec not found")
+        spec   = json.load(open(jpath))
+        slides = sorted(f for f in os.listdir(os.path.join(cdir, "slides"))
+                        if f.endswith(".png"))
+
+        # Build caption
+        if format == "compilation":
+            try:
+                cap = _import_caption()
+                spec.setdefault("slug", slug)
+                caption = cap.build_caption(spec)
+            except Exception as e:
+                caption = f"(caption error: {e})"
+        else:
+            try:
+                sys.path.insert(0, os.path.join(ROOT, "pipeline"))
+                from postiz_publish import build_caption as single_caption
+                caption = single_caption(spec)
+            except Exception as e:
+                caption = f"(caption error: {e})"
+
+        return {
+            "format":   format,
+            "slug":     slug,
+            "title":    spec.get("title") or spec.get("hook_caption") or _slug_to_title(slug),
+            "subtitle": spec.get("short_pitch") or spec.get("theme") or "",
+            "slides": [
+                (_firebase_url(format, slug, s)
+                 if _is_assets_source(os.path.dirname(os.path.dirname(cdir)))
+                 else f"/images/{format}/{slug}/{s}")
+                for s in slides
+            ],
+            "caption": caption,
+            "spec":    spec,
+        }
+
+    # ── 2. Fall back to Firebase Storage ────────────────────────────────────
+    slides = _firebase_list_slides(format, slug)
+    if not slides:
         raise HTTPException(404, "slug not found")
 
-    jpath = os.path.join(cdir, f"{slug}.json")
-    if not os.path.exists(jpath):
-        raise HTTPException(404, "spec not found")
-    spec = json.load(open(jpath))
-
-    slides_dir = os.path.join(cdir, "slides")
-    slides = sorted(f for f in os.listdir(slides_dir) if f.endswith(".png"))
-
-    # Build caption depending on format
-    if format == "compilation":
-        try:
-            cap = _import_caption()
-            spec.setdefault("slug", slug)
-            caption = cap.build_caption(spec)
-        except Exception as e:
-            caption = f"(caption error: {e})"
-    else:
-        # Use the single-recipe pipeline's build_caption
-        try:
-            sys.path.insert(0, os.path.join(ROOT, "pipeline"))
-            from postiz_publish import build_caption as single_caption
-            caption = single_caption(spec)
-        except Exception as e:
-            caption = f"(caption error: {e})"
+    slide_urls = [_firebase_url(format, slug, s) for s in slides]
+    title      = _slug_to_title(slug)
 
     return {
-        "format": format,
-        "slug": slug,
-        "title": spec.get("title") or spec.get("hook_caption") or slug,
-        "subtitle": spec.get("short_pitch") or spec.get("theme") or "",
-        "slides": [f"/images/{format}/{slug}/{s}" for s in slides],
-        "caption": caption,
-        "spec": spec,
+        "format":      format,
+        "slug":        slug,
+        "title":       title,
+        "subtitle":    "",
+        "slides":      slide_urls,
+        "caption":     f"✨ {title}\n\n#food #recipe #foodie #carousel",
+        "spec":        {"title": title, "slug": slug},
+        "slides_base": "firebase",
     }
 
 
 @app.get("/images/{format}/{slug}/{filename}")
 def serve_image(format: str, slug: str, filename: str):
     if format == "single":
-        path = os.path.join(SINGLE_OUT, slug, "slides", filename)
+        base = _resolve_single_dir(slug)
+        path = os.path.join(base, "slides", filename) if base else None
     elif format == "compilation":
-        path = os.path.join(COMP_OUT, slug, "slides", filename)
+        base = _resolve_comp_dir(slug)
+        path = os.path.join(base, "slides", filename) if base else None
     else:
         raise HTTPException(400, "bad format")
-    if not os.path.isfile(path):
+    if not path or not os.path.isfile(path):
         raise HTTPException(404, "image not found")
     return FileResponse(path, media_type="image/png")
 
@@ -1881,159 +2029,25 @@ async def api_upload_tiktok_video(request: Request):
         _shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-# ---------------------------------------------------------------------------
-# Stripe routes
-# ---------------------------------------------------------------------------
-
-@app.get("/pricing")
-def pricing_page():
-    return FileResponse(os.path.join(STATIC, "pricing.html"))
-
-@app.get("/auth")
-def auth_page():
-    return FileResponse(os.path.join(STATIC, "auth.html"))
-
-@app.get("/success")
-def success_page(plan: str = "basic"):
-    from fastapi.responses import RedirectResponse
-    # After Stripe payment → go to auth page to sign in / create account
-    return RedirectResponse(url=f"/auth?plan={plan}", status_code=302)
-
-@app.get("/cancel")
-def cancel_page():
-    return FileResponse(os.path.join(STATIC, "pricing.html"))
-
-
-@app.post("/api/create-checkout-session")
-async def create_checkout_session(request: Request):
-    """Create a Stripe Checkout session and return the redirect URL."""
-    try:
-        body  = await request.json()
-        email = body.get("email", "").strip().lower()
-        plan  = body.get("plan", "basic")   # "basic" or "pro"
-
-        price_id = STRIPE_PRICE_ID_PRO if plan == "pro" else STRIPE_PRICE_ID_BASIC
-        if not price_id:
-            raise HTTPException(500, f"STRIPE_PRICE_ID_{plan.upper()} not set in .env")
-
-        # Build URLs from the incoming request so local and production both work
-        base = str(request.base_url).rstrip("/")
-        success_url = (STRIPE_SUCCESS_URL or f"{base}/success") + f"?plan={plan}&session_id={{CHECKOUT_SESSION_ID}}"
-        cancel_url  = STRIPE_CANCEL_URL  or f"{base}/pricing"
-
-        session_params = {
-            "mode": "subscription",
-            "line_items": [{"price": price_id, "quantity": 1}],
-            "success_url": success_url,
-            "cancel_url":  cancel_url,
-            "billing_address_collection": "auto",
-            "payment_method_types": ["card"],
-        }
-        if email:
-            session_params["customer_email"] = email
-
-        session = _stripe.checkout.Session.create(**session_params)
-        return {"url": session.url}
-
-    except _stripe.StripeError as e:
-        raise HTTPException(400, str(e.user_message or e))
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, str(e))
-
-
-@app.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    """Receive and verify Stripe webhook events."""
-    payload = await request.body()
-    sig     = request.headers.get("stripe-signature", "")
-
-    try:
-        event = _stripe.Webhook.construct_event(
-            payload, sig, STRIPE_WEBHOOK_SECRET
-        )
-    except _stripe.errors.SignatureVerificationError:
-        raise HTTPException(400, "Invalid signature")
-    except Exception as e:
-        raise HTTPException(400, str(e))
-
-    if event["type"] == "checkout.session.completed":
-        session  = event["data"]["object"]
-        email    = (session.get("customer_details") or {}).get("email") or \
-                   session.get("customer_email") or ""
-        customer = session.get("customer", "")
-        sub_id   = session.get("subscription", "")
-        if email:
-            _set_user(email, {
-                "email":           email,
-                "stripe_customer_id": customer,
-                "subscription_id": sub_id,
-                "status":          "active",
-            })
-            print(f"[stripe] ✓ new subscriber: {email}")
-
-    elif event["type"] == "customer.subscription.deleted":
-        sub    = event["data"]["object"]
-        sub_id = sub.get("id", "")
-        # Find user by subscription_id and mark cancelled
-        if _db:
-            try:
-                docs = _db.collection(_USERS_COL)\
-                          .where("subscription_id", "==", sub_id).stream()
-                for doc in docs:
-                    doc.reference.update({"status": "cancelled"})
-                    print(f"[stripe] subscription cancelled: {doc.id}")
-            except Exception as e:
-                print(f"[firestore] cancel lookup error: {e}")
-
-    return {"status": "ok"}
-
-
-@app.post("/api/link-account")
-async def link_account(request: Request):
-    """Called after Firebase auth — saves user info + plan to Firestore."""
-    try:
-        body  = await request.json()
-        email = body.get("email", "").strip().lower()
-        name  = body.get("name", "")
-        plan  = body.get("plan", "basic")
-        uid   = body.get("uid", "")
-        if not email:
-            raise HTTPException(400, "email required")
-
-        existing = _get_user(email)
-        # Preserve existing Stripe fields; don't downgrade an active plan
-        resolved_plan   = existing.get("plan")   or plan
-        resolved_status = existing.get("status") or "active"
-
-        _set_user(email, {
-            "email":  email,
-            "name":   name or existing.get("name", ""),
-            "uid":    uid,
-            "plan":   resolved_plan,
-            "status": resolved_status,
-        })
-        print(f"[auth] linked account: {email} plan={resolved_plan}")
-        return {"ok": True, "plan": resolved_plan}
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, str(e))
-
-
-@app.get("/api/check-access")
-async def check_access(request: Request):
-    """Check if an email has an active subscription in Firestore."""
-    email = request.query_params.get("email", "").strip().lower()
-    if not email:
-        return {"paid": False}
-    return {"paid": _is_paid(email)}
-
-
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC, "index.html"))
+
+
+@app.get("/auth")
+def auth_page():
+    p = os.path.join(STATIC, "auth.html")
+    if not os.path.exists(p):
+        raise HTTPException(404, "auth.html not found")
+    return FileResponse(p)
+
+
+@app.get("/pricing")
+def pricing_page():
+    p = os.path.join(STATIC, "pricing.html")
+    if not os.path.exists(p):
+        raise HTTPException(404, "pricing.html not found")
+    return FileResponse(p)
 
 
 # Static asset mount (CSS, JS, etc.)
@@ -2056,9 +2070,18 @@ def _diagnostics():
         n_single = sum(1 for d in os.listdir(SINGLE_OUT)
                        if os.path.isdir(os.path.join(SINGLE_OUT, d))
                        and os.path.exists(os.path.join(SINGLE_OUT, d, f"{d}.json")))
-        print(f"    -> {n_single} valid single-recipe dirs")
+        print(f"    -> {n_single} valid single-recipe dirs (user generations)")
     else:
-        print("    -> MISSING (no single recipes will show in library)")
+        print("    -> MISSING (will fall back to 'Single recipes/' samples)")
+    print(f"  SINGLE_SAMPLES: {SINGLE_SAMPLES}")
+    if os.path.isdir(SINGLE_SAMPLES):
+        n_samples = sum(1 for d in os.listdir(SINGLE_SAMPLES)
+                        if not d.startswith(".") and not d.startswith("_")
+                        and os.path.isdir(os.path.join(SINGLE_SAMPLES, d))
+                        and os.path.exists(os.path.join(SINGLE_SAMPLES, d, f"{d}.json")))
+        print(f"    -> {n_samples} valid sample dirs")
+    else:
+        print("    -> not present (no bundled samples)")
     print(f"  COMP_OUT:   {COMP_OUT}")
     if os.path.isdir(COMP_OUT):
         n_comp = sum(1 for d in os.listdir(COMP_OUT)
@@ -2079,7 +2102,7 @@ def main():
     host = "0.0.0.0"
     is_local = port == 8765 and not os.environ.get("RENDER")
     print("\n" + "=" * 60)
-    print(f"  RecipeVault Studio — http://localhost:{port}")
+    print(f"  Slidecast Studio — http://localhost:{port}")
     print("=" * 60)
     _diagnostics()
     print("  Tip: Press Ctrl+C to stop.\n")
