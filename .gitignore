@@ -1,0 +1,42 @@
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Secrets =====
+.env
+.env.local
+
+# ===== Local Python venv — NEVER commit this =====
+.venv/
+venv/
+env/
+
+# ===== Generated content — local only, never push to git =====
+# (these are user-generated; the studio's demo fallback in app.js
+# handles the empty-library case with procedurally-rendered SVGs.)
+output/
+output_compilations/
+output_compilations_instagram/
+output_templates/
+ready_to_post/
+ready_to_post_instagram/
+viral_trending_10/
+Single recipes/
+
+# Brand assets uploaded at runtime (per-job, transient)
+webapp/uploads/brand_logos/*
+!webapp/uploads/brand_logos/.gitkeep
+webapp/uploads/brand_kit/
+
+# Tracking snapshots — local-only telemetry
+webapp/tracking/data/snapshots/*.json
+
+# Zips and other temp artifacts
+*.zip
+combined_test.png

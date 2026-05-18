@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Slidecast — Ship 30 days of content across 30 accounts in 30 seconds</title>
+  <meta name="description" content="The fastest way to turn a one-line brief into a finished carousel and auto-publish it across every TikTok and Instagram account you own. Captions and hashtags included." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;1,9..144,400;1,9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v=14" />
+</head>
+<body>
+  <!-- Animated gradient mesh background -->
+  <div class="mesh">
+    <div class="mesh-blob mesh-blob-1"></div>
+    <div class="mesh-blob mesh-blob-2"></div>
+    <div class="mesh-blob mesh-blob-3"></div>
+    <div class="mesh-grain"></div>
+  </div>
+
+  <!-- Top nav -->
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="#">
+        <span class="brand-mark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M6 4h10a4 4 0 014 4v12a0 0 0 010 0H6a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" stroke-width="2"/>
+            <path d="M9 10l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="brand-name"><span data-brand="brand_name">Slidecast</span> <em data-brand="studio_name">Studio</em></span>
+      </a>
+      <nav class="nav-links">
+        <a href="#library">What users made</a>
+        <a href="#how">How it works</a>
+        <a href="#templates">Templates</a>
+        <a href="#generator">Generate</a>
+        <a href="/scheduler">Scheduler</a>
+        <a href="#templates" class="nav-cta">Start creating →</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <div class="eyebrow">
+            <span class="eyebrow-dot"></span>
+            <span data-brand="eyebrow">For creators running multiple accounts</span>
+          </div>
+          <h1 class="hero-title" data-brand-html="tagline_html">
+            Ship <em>30 days</em> of content<br/>
+            across <em>30 accounts</em><br/>
+            in <em>30 seconds.</em>
+          </h1>
+          <p class="hero-lede" data-brand="subtagline">
+            The fastest way to turn a one-line brief into a finished carousel —
+            then auto-publish it to every TikTok and Instagram account you own.
+            Captions and hashtags included. Free to start.
+          </p>
+          <div class="hero-actions">
+            <a href="#generator" class="btn-primary">
+              Generate a carousel
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+            </a>
+            <a href="#library" class="btn-ghost">Browse library</a>
+          </div>
+
+          <div class="hero-stats">
+            <div class="stat">
+              <div class="stat-num"><span data-counter id="stat-total">0</span></div>
+              <div class="stat-label">carousels in library</div>
+            </div>
+            <div class="stat">
+              <div class="stat-num"><span data-counter id="stat-comp">0</span></div>
+              <div class="stat-label">compilations</div>
+            </div>
+            <div class="stat">
+              <div class="stat-num"><span data-counter id="stat-single">0</span></div>
+              <div class="stat-label">single recipes</div>
+            </div>
+            <div class="stat">
+              <div class="stat-num">~30<span class="stat-suffix">s</span></div>
+              <div class="stat-label">avg generation</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <!-- Real TikTok-style mockup; populated by JS with real thumbnails -->
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="phone-deck" id="phone-deck"></div>
+
+              <!-- TikTok-style UI overlay -->
+              <div class="tk-ui">
+                <!-- Progress bars (12 for compilation) -->
+                <div class="tk-progress" id="tk-progress"></div>
+
+                <!-- Right action sidebar -->
+                <div class="tk-actions">
+                  <div class="tk-avatar"></div>
+                  <button class="tk-act">
+                    <span class="tk-act-icon" style="background:rgba(0,0,0,0.45)">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="#ff4d6d"><path d="M12 21s-7-4.35-7-10a4 4 0 017-2.65A4 4 0 0119 11c0 5.65-7 10-7 10z"/></svg>
+                    </span>
+                    <span class="tk-act-count">1.2M</span>
+                  </button>
+                  <button class="tk-act">
+                    <span class="tk-act-icon" style="background:rgba(0,0,0,0.45)">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+                    </span>
+                    <span class="tk-act-count">8.4K</span>
+                  </button>
+                  <button class="tk-act">
+                    <span class="tk-act-icon" style="background:rgba(0,0,0,0.45)">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 21 12 17 5 21 5 5 19 5 19 21"/></svg>
+                    </span>
+                    <span class="tk-act-count">234K</span>
+                  </button>
+                  <button class="tk-act">
+                    <span class="tk-act-icon" style="background:rgba(0,0,0,0.45)">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>
+                    </span>
+                    <span class="tk-act-count">Share</span>
+                  </button>
+                </div>
+
+                <!-- Bottom username + caption -->
+                <div class="tk-bottom">
+                  <div class="tk-user"><span data-brand="tiktok_handle">@nutrilens.ai</span> · <span>Follow</span></div>
+                  <div class="tk-caption" id="tk-caption">5 weekend dinners for your LAZY ASS 😏</div>
+                  <div class="tk-music">♫ original sound — nutrilens.ai</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="float-card float-card-1">
+            <div class="fc-pill">Live</div>
+            <div class="fc-text">Real carousels from <em>your library</em></div>
+          </div>
+          <div class="float-card float-card-2">
+            <div class="fc-tag">📈 6.5M views</div>
+            <div class="fc-text">DINNERS FOR YOUR WIFE THIS WEEK</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Live library + why slideshows print views (combined section 2) -->
+  <section id="library" class="why-section">
+    <div class="container">
+      <div class="section-head">
+        <div class="section-eyebrow">Library</div>
+        <h2 class="section-title">What our users have <em>generated</em>.</h2>
+        <p class="section-sub">Real carousels made on Slidecast — browsable by format. Scroll horizontally to explore, click any card to view all slides and the caption.</p>
+      </div>
+
+      <div class="rail-block">
+        <div class="rail-head">
+          <div class="rail-title">
+            <span class="rail-eyebrow">12 slides · 5 recipes each</span>
+            <h3>Compilations <span id="count-comp">(0)</span></h3>
+          </div>
+          <div class="rail-controls">
+            <button class="rail-arrow" data-rail="comp" data-dir="-1" aria-label="Scroll left">‹</button>
+            <button class="rail-arrow" data-rail="comp" data-dir="1" aria-label="Scroll right">›</button>
+          </div>
+        </div>
+        <div class="rail" id="rail-comp" data-rail-id="comp"></div>
+      </div>
+
+      <div class="rail-block">
+        <div class="rail-head">
+          <div class="rail-title">
+            <span class="rail-eyebrow">10 slides · 1 recipe each</span>
+            <h3>Single recipes <span id="count-single">(0)</span></h3>
+          </div>
+          <div class="rail-controls">
+            <button class="rail-arrow" data-rail="single" data-dir="-1" aria-label="Scroll left">‹</button>
+            <button class="rail-arrow" data-rail="single" data-dir="1" aria-label="Scroll right">›</button>
+          </div>
+        </div>
+        <div class="rail" id="rail-single" data-rail-id="single"></div>
+      </div>
+
+      <!-- Why slideshows: 3 public case studies prove the format -->
+      <div class="why-subhead">
+        <div class="section-eyebrow">Why slideshows print views</div>
+        <h2 class="why-subtitle">The format wins because viewers judge <em>usefulness</em>,<br/>not production.</h2>
+      </div>
+
+      <div class="why-cards">
+        <div class="why-card">
+          <div class="why-stat">700,000 users</div>
+          <div class="why-name">Jack Friks · StrongerMobile</div>
+          <p class="why-body">725 TikToks in 295 days — 2.5 a day, solo. 98% slideshows. Most flopped, but 11 million-view winners and 24 mid-hits carried the account to 700K users. The swing rate is the system.</p>
+          <div class="why-tag">Public case study</div>
+        </div>
+        <div class="why-card">
+          <div class="why-stat">9.1M views in 30 days</div>
+          <div class="why-name">Clove</div>
+          <p class="why-body">One hook — <em>"I've been cooking for X YEARS and just saw THIS?"</em> — rerun with new dishes until the format dies. Don't be precious. Once a hook hits, run it back.</p>
+          <div class="why-tag">Public case study</div>
+        </div>
+        <div class="why-card">
+          <div class="why-stat">19M views in 48h</div>
+          <div class="why-name">fav_girls02</div>
+          <p class="why-body">One back-to-school glow-up slideshow popped. Posted 3+ parts in the next 48 hours with the same cover and hook structure. Speed during a hit window is the difference between 2M and 19M.</p>
+          <div class="why-tag">Public case study</div>
+        </div>
+      </div>
+
+      <p class="why-footer">
+        The system is simple: <strong>tight hooks + slideshow format + high post rate</strong>. The bottleneck is generation and distribution. Slidecast removes both.
+      </p>
+    </div>
+  </section>
+
+  <!-- Studio — Generate or upload your own (moved up: section #3) -->
+  <section id="generator" class="generator">
+    <div class="container">
+      <div class="section-head section-head-row">
+        <div>
+          <div class="section-eyebrow">Studio</div>
+          <h2 class="section-title">Make your next <em>banger</em>.</h2>
+        </div>
+        <div id="studio-plan-badge" class="studio-plan-badge"></div>
+      </div>
+
+      <!-- Mode picker: Generate vs Upload -->
+      <div class="studio-mode-row" role="radiogroup" aria-label="Studio mode">
+        <button class="studio-mode active" data-mode="generate" type="button">
+          <span class="studio-mode-radio"></span>
+          <div class="studio-mode-text">
+            <strong>Generate one for me</strong>
+            <span>Type a brief, AI builds the carousel</span>
+          </div>
+        </button>
+        <button class="studio-mode" data-mode="upload" type="button">
+          <span class="studio-mode-radio"></span>
+          <div class="studio-mode-text">
+            <strong>I have slides ready</strong>
+            <span>Upload your own — we'll post them everywhere</span>
+          </div>
+        </button>
+      </div>
+
+      <!-- GENERATE MODE -->
+      <div id="studio-generate" class="studio-mode-panel">
+        <div class="format-cards">
+          <button class="fmt-card" data-fmt="single">
+            <div class="fmt-card-top">
+              <div class="fmt-tag">10 slides</div>
+              <div class="fmt-check"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg></div>
+            </div>
+            <h3>Single Recipe</h3>
+            <p>One detailed dish, hook → ingredients → steps → final CTA.</p>
+            <ul class="fmt-bullets">
+              <li>Tight overhead bowl shots</li>
+              <li>Step-by-step visual flow</li>
+              <li>Ends with your CTA</li>
+            </ul>
+            <div class="fmt-eg">e.g. <em>"high-protein chicken caesar wrap"</em></div>
+          </button>
+
+          <button class="fmt-card selected" data-fmt="compilation">
+            <div class="fmt-card-top">
+              <div class="fmt-tag fmt-tag-hot">12 slides · 5 recipes</div>
+              <div class="fmt-check"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg></div>
+            </div>
+            <h3>Compilation</h3>
+            <p>5 recipes around a theme. Save magnet — the @emerybrookscook play.</p>
+            <ul class="fmt-bullets">
+              <li>Edgy hook + 5 photos + 5 recipe pages</li>
+              <li>Mid-carousel app CTA</li>
+              <li>Best for views &amp; saves</li>
+            </ul>
+            <div class="fmt-eg">e.g. <em>"5 weekend dinners for your lazy ass"</em></div>
+          </button>
+        </div>
+
+        <div class="prompt-card">
+          <div class="prompt-row">
+            <input id="prompt" placeholder="Type your theme or recipe brief…" autocomplete="off" />
+            <button id="generate-btn" class="btn-primary" data-action="generate">
+              <span id="generate-btn-label">Generate</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+
+          <div class="qty-row">
+            <label class="qty-label" for="gen-qty">How many carousels</label>
+            <div class="qty-controls">
+              <button class="qty-step" data-step="-1" type="button" aria-label="Decrease">−</button>
+              <input id="gen-qty" type="number" min="1" max="1" value="1" />
+              <button class="qty-step" data-step="1" type="button" aria-label="Increase">+</button>
+            </div>
+            <span id="qty-note" class="qty-note">First carousel free. No signup needed.</span>
+          </div>
+
+          <div class="examples">
+            <span class="examples-label">Try:</span>
+            <button class="chip" data-chip="5 dinners that hit harder than your ex's apology" data-fmt="compilation">🔥 5 dinners better than your ex</button>
+            <button class="chip" data-chip="5 cozy fall dinners for cold rainy nights" data-fmt="compilation">🍂 5 cozy fall dinners</button>
+            <button class="chip" data-chip="5 high-protein lunches under 600 calories" data-fmt="compilation">💪 5 high-protein lunches</button>
+            <button class="chip" data-chip="5 dinner ideas to impress your boyfriend" data-fmt="compilation">💕 5 boyfriend dinners</button>
+            <button class="chip" data-chip="5 broke college dinners under 5 dollars" data-fmt="compilation">💸 5 broke college dinners</button>
+            <button class="chip" data-chip="korean spicy beef bulgogi bowl (15 minutes)" data-fmt="single">🥩 korean beef bulgogi</button>
+            <button class="chip" data-chip="creamy mushroom orzo with parmesan" data-fmt="single">🍄 mushroom orzo</button>
+          </div>
+        </div>
+
+        <div id="job-panel" class="job-panel hidden">
+          <div class="job-status">
+            <div class="job-spinner"></div>
+            <div class="job-info">
+              <div class="job-title" id="job-title">Generating…</div>
+              <div class="job-msg" id="job-msg">Starting up</div>
+            </div>
+          </div>
+          <div class="job-bar"><div class="job-bar-fill" id="job-bar"></div></div>
+        </div>
+
+        <div id="result-panel" class="result-panel hidden">
+          <div class="result-header">
+            <div>
+              <div class="result-eyebrow">Just generated</div>
+              <h3 id="result-title">—</h3>
+              <p id="result-subtitle"></p>
+            </div>
+            <div class="result-actions">
+              <button id="copy-caption" class="btn-ghost">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                Copy caption
+              </button>
+              <span id="open-folder" class="folder-tag" title="">—</span>
+            </div>
+          </div>
+          <div class="slides-grid" id="slides-grid"></div>
+          <div class="caption-block">
+            <h4>Caption</h4>
+            <pre id="caption-text"></pre>
+          </div>
+
+          <!-- State-aware result actions: download + post + paywall messaging -->
+          <div id="result-cta" class="result-cta">
+            <button id="result-download" class="btn-ghost result-cta-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              Download ZIP
+            </button>
+            <button id="result-post" class="btn-primary result-cta-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              Post to my accounts
+            </button>
+            <div id="result-paywall-note" class="result-paywall-note hidden"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- UPLOAD MODE -->
+      <div id="studio-upload" class="studio-mode-panel hidden">
+        <div class="upload-card">
+          <div id="upload-dropzone" class="upload-dropzone">
+            <input id="upload-files" type="file" accept="image/*" multiple hidden />
+            <div class="upload-dropzone-icon">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            </div>
+            <div class="upload-dropzone-text">
+              <strong>Drop your slides here</strong>
+              <span>PNG or JPG · 10–12 images recommended</span>
+              <span class="dim">or click to browse</span>
+            </div>
+          </div>
+          <div id="upload-preview" class="upload-preview hidden"></div>
+
+          <div class="upload-fields">
+            <label for="upload-caption">Caption</label>
+            <textarea id="upload-caption" rows="4" placeholder="What's the post about? Hook on line 1, then context…"></textarea>
+            <label for="upload-hashtags">Hashtags</label>
+            <input id="upload-hashtags" type="text" placeholder="#Slidecast #recipe #dinneridea" />
+          </div>
+
+          <div class="upload-actions">
+            <button id="upload-download" class="btn-ghost result-cta-btn" disabled>Download ZIP</button>
+            <button id="upload-post" class="btn-primary result-cta-btn" disabled>Post to my accounts →</button>
+            <div id="upload-paywall-note" class="result-paywall-note hidden"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing — paywall destination -->
+  <section id="pricing" class="pricing-section">
+    <div class="container">
+      <div class="section-head">
+        <div class="section-eyebrow">Pricing</div>
+        <h2 class="section-title">One brief. Every account. <em>Done.</em></h2>
+        <p class="section-sub">Start with a free preview. Upgrade when you want your own brand, more accounts, and the auto-post engine.</p>
+      </div>
+
+      <div class="price-grid">
+        <!-- Free -->
+        <div class="price-card" data-plan="free">
+          <div class="price-tier">Free</div>
+          <div class="price-amount">$0</div>
+          <div class="price-sub">forever</div>
+          <ul class="price-bullets">
+            <li>1 lifetime generation preview</li>
+            <li>Cover slide visible · rest blurred</li>
+            <li>Slidecast CTA on every slide</li>
+            <li>No download · no posting</li>
+          </ul>
+          <button class="btn-ghost price-cta" data-cta="get-started">Try the preview</button>
+        </div>
+
+        <!-- Basic -->
+        <div class="price-card" data-plan="basic">
+          <div class="price-tier">Basic</div>
+          <div class="price-amount">$20.99<span class="price-period">/mo</span></div>
+          <div class="price-sub">solo creators</div>
+          <ul class="price-bullets">
+            <li><strong>10 carousels</strong> every month</li>
+            <li><strong>10 connected accounts</strong></li>
+            <li>Full carousels · download ZIP</li>
+            <li>Your own brand image + CTA</li>
+            <li>Auto-post via your Postiz key</li>
+            <li>Upload + post your own slides</li>
+          </ul>
+          <button class="btn-primary price-cta" data-cta="upgrade-basic">Upgrade to Basic →</button>
+        </div>
+
+        <!-- Pro -->
+        <div class="price-card price-card-featured" data-plan="pro">
+          <div class="price-recommended">Recommended</div>
+          <div class="price-tier">Pro</div>
+          <div class="price-amount">$69.99<span class="price-period">/mo</span></div>
+          <div class="price-sub">creator operators</div>
+          <ul class="price-bullets">
+            <li><strong>30 carousels</strong> every month</li>
+            <li><strong>30 connected accounts</strong></li>
+            <li>Everything in Basic</li>
+            <li>Priority generation queue</li>
+            <li>TikTok analytics dashboard</li>
+            <li>Scheduling calendar (drip a week)</li>
+          </ul>
+          <button class="btn-primary price-cta" data-cta="upgrade-pro">Upgrade to Pro →</button>
+        </div>
+      </div>
+
+      <p class="pricing-note">Posting uses <strong>your own Postiz API key</strong> — bring it once at setup. No per-post fees from us.</p>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how" class="how">
+    <div class="container">
+      <div class="section-head">
+        <div class="section-eyebrow">The framework</div>
+        <h2 class="section-title">From <em>brief</em> to <em>posted</em>. One pipeline.</h2>
+        <p class="section-sub">Most tools solve content <em>or</em> distribution. Slidecast does both — one workflow, every account, zero copy-paste.</p>
+      </div>
+      <div class="how-grid">
+        <div class="how-card">
+          <div class="how-num">01</div>
+          <h3>Type a brief</h3>
+          <p>Pick a format, type one line — <em>"5 weekend dinners for your lazy ass."</em> That's the entire input. Slidecast handles everything downstream.</p>
+        </div>
+        <div class="how-card">
+          <div class="how-num">02</div>
+          <h3>Auto-generate</h3>
+          <p>Gemini writes the recipes, caption, and hashtags. Nano Banana renders cinematic food photos. The compositor lays out 10–12 finished slides in ~30 seconds.</p>
+        </div>
+        <div class="how-card">
+          <div class="how-num">03</div>
+          <h3>Auto-post everywhere</h3>
+          <p>Postiz pushes the carousel to every connected TikTok and Instagram account on schedule — captions and hashtags already in place. No re-uploading, no re-captioning.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Spotlight — one creator win from Slidecast itself -->
+  <section id="spotlight" class="spotlight-section">
+    <div class="container">
+      <div class="spotlight-grid">
+        <div class="spotlight-copy">
+          <div class="spotlight-eyebrow">
+            <span class="spotlight-dot"></span>
+            <span>Spotlight</span>
+          </div>
+          <h2 class="spotlight-title">"Dinners for your wife this week" hit <em>6.5M views</em> from one carousel.</h2>
+          <p class="spotlight-sub">One brief in the studio. 12 slides generated. Auto-posted to every connected account. 6.5 million views and the comments still rolling in.</p>
+          <a href="#templates" class="btn-primary spotlight-cta">
+            Start completely free
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </a>
+          <div class="spotlight-meta">
+            <div class="spotlight-meta-row">
+              <span class="spotlight-meta-label">Format</span>
+              <span class="spotlight-meta-val">Compilation · 12 slides · 5 recipes</span>
+            </div>
+            <div class="spotlight-meta-row">
+              <span class="spotlight-meta-label">Made in</span>
+              <span class="spotlight-meta-val">~30 seconds, fully automated</span>
+            </div>
+            <div class="spotlight-meta-row">
+              <span class="spotlight-meta-label">Posted to</span>
+              <span class="spotlight-meta-val">Every connected TikTok account · captions + hashtags pre-written</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="spotlight-visual">
+          <div class="spotlight-phone">
+            <div class="spotlight-phone-screen">
+              <img src="/images/compilation/5_dinners_for_your_wife_this_week/slides/01_hook.png" alt="Slidecast carousel cover" loading="lazy" onerror="this.style.display='none'"/>
+              <div class="spotlight-overlay">
+                <div class="spotlight-views">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                  6.5M views
+                </div>
+                <div class="spotlight-handle">@nutrilens.ai · Slidecast carousel</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Templates — universal carousel builder -->
+  <section id="templates" class="templates-section">
+    <div class="container">
+      <div class="section-head">
+        <div class="section-eyebrow">Templates</div>
+        <h2 class="section-title">Pick a <em>format</em>, build at scale.</h2>
+        <p class="section-sub">5 proven viral carousel formats. Customize with your brand, pick how many you want, and download the whole batch as a ZIP.</p>
+      </div>
+
+      <!-- Template cards -->
+      <div id="tpl-gallery" class="tpl-gallery"></div>
+
+      <!-- Builder form (appears when a template is picked) -->
+      <div id="tpl-builder" class="tpl-builder hidden">
+        <div class="tpl-builder-head">
+          <div>
+            <div class="section-eyebrow">Configuring</div>
+            <h3 id="tpl-builder-title">—</h3>
+          </div>
+          <button id="tpl-builder-close" class="btn-ghost">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            Pick a different template
+          </button>
+        </div>
+
+        <div class="tpl-builder-cols">
+          <!-- Content fields (left) -->
+          <div class="tpl-pane">
+            <h4 class="tpl-pane-h">Content</h4>
+            <div id="tpl-fields"></div>
+
+            <div class="tpl-row">
+              <label>Number of carousels</label>
+              <input id="tpl-count" type="number" min="1" max="20" value="3" />
+            </div>
+            <div class="tpl-row">
+              <label>Items per carousel <span id="tpl-item-range" class="dim"></span></label>
+              <input id="tpl-item-count" type="number" min="1" max="20" value="5" />
+            </div>
+          </div>
+
+          <!-- Brand fields (right) -->
+          <div class="tpl-pane">
+            <h4 class="tpl-pane-h">Your brand</h4>
+            <div class="tpl-row">
+              <label>Brand name</label>
+              <input id="tpl-brand-name" type="text" placeholder="e.g. Slidecast" />
+            </div>
+            <div class="tpl-row">
+              <label>Primary color</label>
+              <div class="tpl-color-row">
+                <input id="tpl-brand-color" type="color" value="#ff5c7a" />
+                <input id="tpl-brand-color-hex" type="text" value="#ff5c7a" />
+              </div>
+            </div>
+            <div class="tpl-row">
+              <label>CTA button text</label>
+              <input id="tpl-brand-cta-text" type="text" placeholder="e.g. Get the app" />
+            </div>
+            <div class="tpl-row">
+              <label>CTA URL or handle</label>
+              <input id="tpl-brand-cta-url" type="text" placeholder="e.g. https://slidecast.app or @nutrilens.ai" />
+            </div>
+            <div class="tpl-row">
+              <label>Logo (optional)</label>
+              <div class="tpl-logo-row">
+                <input id="tpl-logo-file" type="file" accept="image/*" />
+                <div id="tpl-logo-preview" class="tpl-logo-preview"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tpl-actions">
+          <button id="tpl-generate" class="btn-primary">
+            Generate <span id="tpl-generate-count">3</span> carousel<span id="tpl-generate-plural">s</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </button>
+          <span id="tpl-cost-est" class="tpl-cost-est"></span>
+        </div>
+
+        <!-- Job progress -->
+        <div id="tpl-job" class="tpl-job hidden">
+          <div class="job-status">
+            <div class="job-spinner"></div>
+            <div class="job-info">
+              <div class="job-title" id="tpl-job-title">Generating…</div>
+              <div class="job-msg" id="tpl-job-msg">Starting up</div>
+            </div>
+          </div>
+          <div class="job-bar"><div class="job-bar-fill" id="tpl-job-bar"></div></div>
+        </div>
+      </div>
+
+      <!-- Batches list -->
+      <div class="tpl-batches">
+        <div class="rail-head">
+          <div class="rail-title">
+            <span class="rail-eyebrow">Past batches</span>
+            <h3>Downloads <span id="tpl-batch-count">(0)</span></h3>
+          </div>
+        </div>
+        <div id="tpl-batches" class="tpl-batches-grid"></div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================================================
+       Paywall / flow modals (mock — replace with real auth/Stripe later)
+       ============================================================ -->
+
+  <!-- Signup modal (dummy) -->
+  <div id="signup-modal" class="paywall-modal hidden" role="dialog" aria-modal="true">
+    <div class="paywall-backdrop" data-close="signup-modal"></div>
+    <div class="paywall-panel">
+      <button class="paywall-close" data-close="signup-modal" aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="paywall-eyebrow">Sign up free</div>
+      <h2 class="paywall-title">Keep going with <em>3 free generations</em>.</h2>
+      <p class="paywall-sub">Download enabled. Slidecast CTA stays on your slides until you upgrade.</p>
+
+      <button id="signup-google" class="paywall-btn-google" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Continue with Google
+      </button>
+
+      <div class="paywall-divider"><span>or</span></div>
+
+      <label class="paywall-label" for="signup-email">Email</label>
+      <input id="signup-email" type="email" placeholder="you@example.com" class="paywall-input"/>
+      <button id="signup-magic" class="paywall-btn-primary" type="button">Send magic link →</button>
+
+      <div class="paywall-dummy-note">
+        <strong>Mock signup.</strong> Either button instantly signs you in for testing. Real auth lives in your parallel codebase.
+      </div>
+    </div>
+  </div>
+
+  <!-- Checkout modal (dummy Stripe) -->
+  <div id="checkout-modal" class="paywall-modal hidden" role="dialog" aria-modal="true">
+    <div class="paywall-backdrop" data-close="checkout-modal"></div>
+    <div class="paywall-panel paywall-panel-wide">
+      <button class="paywall-close" data-close="checkout-modal" aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="checkout-grid">
+        <div class="checkout-left">
+          <div class="paywall-eyebrow">Checkout</div>
+          <h2 id="checkout-plan-title" class="paywall-title">—</h2>
+          <div id="checkout-summary" class="checkout-summary"></div>
+        </div>
+        <div class="checkout-right">
+          <div class="checkout-fields">
+            <label class="paywall-label">Card number</label>
+            <input type="text" placeholder="4242 4242 4242 4242" class="paywall-input mono"/>
+            <div class="checkout-row">
+              <div>
+                <label class="paywall-label">Expiry</label>
+                <input type="text" placeholder="MM / YY" class="paywall-input mono"/>
+              </div>
+              <div>
+                <label class="paywall-label">CVC</label>
+                <input type="text" placeholder="123" class="paywall-input mono"/>
+              </div>
+            </div>
+            <label class="paywall-label">Cardholder</label>
+            <input type="text" placeholder="Harsh Bansal" class="paywall-input"/>
+          </div>
+          <button id="checkout-pay" class="paywall-btn-primary paywall-btn-large" type="button">
+            Pay <span id="checkout-pay-amount">$0</span> →
+          </button>
+          <div class="paywall-dummy-note">
+            <strong>Mock Stripe.</strong> Clicking Pay instantly upgrades you for testing.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Onboarding modal (post-payment, 3 steps) -->
+  <div id="onboard-modal" class="paywall-modal hidden" role="dialog" aria-modal="true">
+    <div class="paywall-backdrop" data-close="onboard-modal"></div>
+    <div class="paywall-panel paywall-panel-wide">
+      <button class="paywall-close" data-close="onboard-modal" aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="onboard-steps">
+        <span class="onboard-step active" data-step="1"><span class="onboard-step-num">1</span> Brand image</span>
+        <span class="onboard-step" data-step="2"><span class="onboard-step-num">2</span> Brand kit</span>
+        <span class="onboard-step" data-step="3"><span class="onboard-step-num">3</span> Postiz</span>
+      </div>
+
+      <!-- Step 1: Brand image -->
+      <div class="onboard-page" data-page="1">
+        <h2 class="paywall-title">Upload your brand image</h2>
+        <p class="paywall-sub">This replaces the Slidecast CTA on every carousel you generate. Square or vertical PNG/JPG works best.</p>
+        <input id="onboard-brand-file" type="file" accept="image/*" hidden/>
+        <div id="onboard-brand-dropzone" class="onboard-dropzone">
+          <div id="onboard-brand-preview" class="onboard-dropzone-preview"></div>
+          <div class="onboard-dropzone-text">
+            <strong>Drop your brand image</strong>
+            <span class="dim">or click to browse · PNG/JPG up to 5MB</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Brand kit -->
+      <div class="onboard-page hidden" data-page="2">
+        <h2 class="paywall-title">Your brand kit</h2>
+        <p class="paywall-sub">These apply to every slide you generate. Edit anytime in Settings.</p>
+        <label class="paywall-label">Brand name</label>
+        <input id="onboard-brand-name" type="text" placeholder="e.g. Caldiet" class="paywall-input"/>
+        <label class="paywall-label">Brand color</label>
+        <div class="color-row">
+          <input id="onboard-brand-color" type="color" value="#ff5c7a"/>
+          <input id="onboard-brand-color-hex" type="text" value="#ff5c7a" class="paywall-input mono"/>
+        </div>
+        <label class="paywall-label">CTA on final slide</label>
+        <input id="onboard-brand-cta" type="text" placeholder="e.g. Get the app — link in bio" class="paywall-input"/>
+      </div>
+
+      <!-- Step 3: Postiz -->
+      <div class="onboard-page hidden" data-page="3">
+        <h2 class="paywall-title">Connect Postiz <span class="dim-tag">optional</span></h2>
+        <p class="paywall-sub">Slidecast uses <strong>your own</strong> Postiz subscription to post to your accounts. Paste your API key once and we'll handle scheduling. Skip this and you can still download every carousel.</p>
+        <label class="paywall-label">Postiz API key</label>
+        <input id="onboard-postiz-key" type="password" placeholder="ptz_••••" class="paywall-input mono"/>
+        <button id="onboard-postiz-test" class="btn-ghost" type="button">Test connection</button>
+        <p class="onboard-help">Don't have a key? <a href="https://postiz.com" target="_blank" rel="noopener">Get one at postiz.com →</a></p>
+      </div>
+
+      <div class="onboard-nav">
+        <button id="onboard-back" class="btn-ghost" type="button">← Back</button>
+        <div class="onboard-nav-right">
+          <button id="onboard-skip" class="btn-ghost" type="button">Skip</button>
+          <button id="onboard-next" class="btn-primary" type="button">Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Post-to-accounts modal (mock) -->
+  <div id="post-modal" class="paywall-modal hidden" role="dialog" aria-modal="true">
+    <div class="paywall-backdrop" data-close="post-modal"></div>
+    <div class="paywall-panel paywall-panel-wide">
+      <button class="paywall-close" data-close="post-modal" aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="paywall-eyebrow">Post via Postiz</div>
+      <h2 class="paywall-title">Where should we post this?</h2>
+      <div id="post-accounts" class="post-accounts"></div>
+      <div class="post-schedule">
+        <div class="paywall-label">When</div>
+        <label class="post-radio"><input type="radio" name="post-when" value="now" checked/> Post now</label>
+        <label class="post-radio"><input type="radio" name="post-when" value="schedule"/> Schedule for <input id="post-schedule-time" type="datetime-local"/></label>
+        <label class="post-radio"><input type="radio" name="post-when" value="drip"/> Drip across the week (one per day)</label>
+      </div>
+      <button id="post-confirm" class="paywall-btn-primary paywall-btn-large" type="button">Confirm &amp; post →</button>
+      <div class="paywall-dummy-note">
+        <strong>Mock post.</strong> Would call Postiz API in production. Closes after a fake "success" toast.
+      </div>
+    </div>
+  </div>
+
+  <!-- Debug strip (mock-mode helper) -->
+  <button id="state-reset-btn" class="state-reset-btn" type="button" title="Reset paywall state (clears localStorage)">↺ Reset state</button>
+
+  <!-- Original modal (lib previews) -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel">
+      <button class="modal-close" id="modal-close" aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <div class="container foot-inner">
+      <div class="foot-left">
+        <span class="brand">
+          <span class="brand-mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 4h10a4 4 0 014 4v12a0 0 0 010 0H6a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" stroke-width="2"/><path d="M9 10l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span class="brand-name"><span data-brand="brand_name">Slidecast</span> <span data-brand="studio_name">Studio</span></span>
+        </span>
+        <span class="foot-meta" data-brand="footer_meta">runs locally · uses your Gemini key from .env</span>
+      </div>
+      <div class="foot-right">
+        <a href="#generator">Generate</a>
+        <a href="#library">Library</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/static/app.js?v=16"></script>
+</body>
+</html>

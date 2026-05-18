@@ -1,0 +1,3 @@
+# Per-account TikTok refresh tokens — DO NOT commit
+data/tokens.json
+data/snapshots/

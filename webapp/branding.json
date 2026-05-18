@@ -1,0 +1,14 @@
+{
+  "_comment": "Change these values to rebrand Slidecast Studio for any product. Restart the server to apply.",
+
+  "brand_name":      "Slidecast",
+  "studio_name":     "Studio",
+  "tagline_html":    "Ship <em>30 days</em> of content<br/>across <em>30 accounts</em><br/>in <em>30 seconds.</em>",
+  "subtagline":      "The fastest way to turn a one-line brief into a finished carousel — then auto-publish it to every TikTok and Instagram account you own. Captions and hashtags included. Free to start.",
+  "eyebrow":         "For creators running multiple accounts",
+  "primary_color":   "#ff5c7a",
+  "secondary_color": "#f4c47a",
+  "tiktok_handle":   "@nutrilens.ai",
+  "cta_phrase":      "Made with Slidecast — generate carousels & auto-post to all your accounts. Link in bio",
+  "footer_meta":     "runs locally · uses your Gemini key from .env"
+}
