@@ -1200,17 +1200,28 @@ def api_download_zip(format: str, slug: str):
 
 @app.get("/images/{format}/{slug}/{filename}")
 def serve_image(format: str, slug: str, filename: str):
+    if format not in ("single", "compilation"):
+        raise HTTPException(400, "bad format")
+
+    # Try local filesystem first (fast path for freshly generated carousels)
     if format == "single":
         base = _resolve_single_dir(slug)
-        path = os.path.join(base, "slides", filename) if base else None
-    elif format == "compilation":
-        base = _resolve_comp_dir(slug)
-        path = os.path.join(base, "slides", filename) if base else None
     else:
-        raise HTTPException(400, "bad format")
-    if not path or not os.path.isfile(path):
-        raise HTTPException(404, "image not found")
-    return FileResponse(path, media_type="image/png")
+        base = _resolve_comp_dir(slug)
+
+    if base:
+        path = os.path.join(base, "slides", filename)
+        if os.path.isfile(path):
+            return FileResponse(path, media_type="image/png")
+
+    # Local file missing (ephemeral disk wiped on Render restart, or never
+    # written here) — redirect to Firebase Storage CDN so the browser fetches
+    # it directly without hitting this server again.
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(
+        url=_firebase_url(format, slug, filename),
+        status_code=302,
+    )
 
 
 # =============================================================
