@@ -103,7 +103,7 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
     """Generate an image via Google's image APIs with fallback chain.
 
     Tries in order:
-      1. Gemini generate_content image models (gemini-2.5-flash-image, etc.)
+      1. Gemini generate_content image models (gemini-2.0-flash-preview-image-generation)
       2. Imagen via generate_images API (imagen-4 / imagen-3)
       3. OpenAI gpt-image-1 / dall-e-3 if OPENAI_API_KEY is set
     """
@@ -117,10 +117,13 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
     verbose = os.environ.get("GEMINI_IMAGE_VERBOSE", "").lower() in ("1", "true", "yes")
 
     # ── Tier 1: Gemini generate_content models ───────────────────────────────
+    # "gemini-2.5-flash-image" does NOT exist — the only valid native-image
+    # model in the generate_content API is gemini-2.0-flash-preview-image-generation.
     env_primary = os.environ.get("GEMINI_IMAGE_MODEL", "").strip()
     _GEMINI_MODELS = [
-        env_primary or "gemini-2.5-flash-image",
-        model,  # caller override (if different from primary)
+        env_primary or "gemini-2.0-flash-preview-image-generation",
+        model,  # caller override (if different from default)
+        "gemini-2.0-flash-exp",  # experimental fallback
     ]
     # deduplicate while preserving order, skip imagen- models (different API)
     seen = set()
@@ -163,9 +166,10 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
                     break  # 404 / bad request → skip to next model
 
     # ── Tier 2: Imagen via generate_images API ───────────────────────────────
+    # imagen-3.0-generate-002 is broadly available; imagen-4 requires higher tier
     _IMAGEN_MODELS = [
-        "imagen-4.0-fast-generate-001",
         "imagen-3.0-generate-002",
+        "imagen-4.0-fast-generate-001",
     ]
     for imagen_model in _IMAGEN_MODELS:
         try:
@@ -203,7 +207,7 @@ def generate_image(
     base_prompt: str,
     slide_type: str,
     output_path: str,
-    model: str = "gemini-2.5-flash-image",
+    model: str = "gemini-2.0-flash-preview-image-generation",
     size: str = "1024x1024",
     quality: str = "high",   # for gpt-image-1 family
     retries: int = 2,

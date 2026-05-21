@@ -78,7 +78,7 @@ INGREDIENT SECTIONS (grouped, like in a printed cookbook):
   The total ingredient list should feel detailed, like a printed cookbook —
   aim for 12-18 ingredient lines total across all sections.
 
-HERO IMAGE PROMPTS (for Nano Banana / Gemini-2.5-flash-image):
+HERO IMAGE PROMPTS (for gemini-2.0-flash-preview-image-generation / Imagen 3):
 - Style: warm, cinematic food-photography, shallow depth of field, beautifully
   styled, restaurant-quality. Specific lighting (golden-hour kitchen light,
   warm tungsten), cast-iron skillet or rustic plate, garnish, slight steam.

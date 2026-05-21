@@ -73,7 +73,7 @@ def _gemini_json(model: str, system_prompt: str, user_prompt: str,
 def generate_one(template_id: str, inputs: dict, brand: dict,
                  item_count: int, batch_dir: str,
                  carousel_index: int = 0,
-                 image_model: str = "gemini-2.5-flash-image") -> dict:
+                 image_model: str = "gemini-2.0-flash-preview-image-generation") -> dict:
     """Generate ONE carousel. Returns a dict with paths + metadata."""
     tpl = registry.get_template(template_id)
     if not tpl:
