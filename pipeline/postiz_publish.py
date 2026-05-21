@@ -177,6 +177,13 @@ def _pick_hashtags(recipe: dict) -> list[str]:
     return tags[:12]
 
 
+_CTA_CAPTION = [
+    "Here's the trick for saving recipes:",
+    "Like > Share > RecipeVault.",
+    "That's all it takes to keep the full recipe.",
+]
+
+
 def build_caption(recipe: dict) -> str:
     title = recipe.get("title", "Recipe")
     pitch = recipe.get("short_pitch", "")
@@ -190,6 +197,8 @@ def build_caption(recipe: dict) -> str:
     lines.append("Ingredients:")
     for i in ingredients:
         lines.append(f"- {i}")
+    lines.append("")
+    lines += _CTA_CAPTION
     lines.append("")
     lines.append(hashtags)
     return "\n".join(lines)

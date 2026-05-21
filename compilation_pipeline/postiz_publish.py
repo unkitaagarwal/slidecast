@@ -282,6 +282,13 @@ def _pick_hashtags(comp: dict) -> list[str]:
 _OPENER_EMOJIS = ["😏", "😅", "🤤", "👀", "💕", "🍳", "✨"]
 
 
+_CTA_CAPTION = [
+    "Here's the trick for saving recipes:",
+    "Like > Share > RecipeVault.",
+    "That's all it takes to keep the full recipe.",
+]
+
+
 def build_caption(comp: dict) -> str:
     """Short clean caption — hook + RecipeVault CTA + hashtags. No recipe dump."""
     hook = comp.get("hook_caption", "").strip()
@@ -294,9 +301,7 @@ def build_caption(comp: dict) -> str:
     lines = [
         f"{hook} {emoji}",
         "",
-        "Looking for recipe ideas to cook at home? Check these out! \U0001f468‍\U0001f373\U0001f495",
-        "",
-        "Save these recipes easily with RecipeVault app! Link in bio \U0001f4dd\U0001f373",
+        *_CTA_CAPTION,
         "",
         hashtags,
     ]

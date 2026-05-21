@@ -17,6 +17,13 @@ import os
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
+# Fixed CTA copy — same on every single slideshow, never AI-generated
+CTA_CAPTION: list[str] = [
+    "Here's the trick for saving recipes:",
+    "Like > Share > RecipeVault.",
+    "That's all it takes to keep the full recipe.",
+]
+
 from openai import OpenAI
 
 # ---------------------------------------------------------------------------
@@ -65,6 +72,7 @@ class Recipe:
     short_pitch: str       # 1-line description used in hook
     ingredients: list[str]
     slides: list[Slide]
+    cta_caption: list[str] = field(default_factory=lambda: CTA_CAPTION.copy())
 
     def to_dict(self) -> dict:
         d = asdict(self)
