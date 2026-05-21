@@ -93,8 +93,20 @@ def _generate_with_openai(full_prompt: str, model: str, size: str, quality: str)
     return requests.get(img_data.url, timeout=60).content
 
 
+def _gemini_err_quiet(e: Exception) -> bool:
+    """404/NOT_FOUND = retired model name; skip without spamming logs."""
+    s = str(e)
+    return "404" in s or "NOT_FOUND" in s
+
+
 def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
-    """Generate an image via Google's Gemini (Nano Banana) image API."""
+    """Generate an image via Google's image APIs with fallback chain.
+
+    Tries in order:
+      1. Gemini generate_content image models (gemini-2.5-flash-image, etc.)
+      2. Imagen via generate_images API (imagen-4 / imagen-3)
+      3. OpenAI gpt-image-1 / dall-e-3 if OPENAI_API_KEY is set
+    """
     from google import genai
     from google.genai import types as gtypes
 
@@ -102,15 +114,89 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY missing from environment")
     client = genai.Client(api_key=api_key)
-    resp = client.models.generate_content(
-        model=model,
-        contents=[full_prompt],
-        config=gtypes.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"]),
+    verbose = os.environ.get("GEMINI_IMAGE_VERBOSE", "").lower() in ("1", "true", "yes")
+
+    # ── Tier 1: Gemini generate_content models ───────────────────────────────
+    env_primary = os.environ.get("GEMINI_IMAGE_MODEL", "").strip()
+    _GEMINI_MODELS = [
+        env_primary or "gemini-2.5-flash-image",
+        model,  # caller override (if different from primary)
+    ]
+    # deduplicate while preserving order, skip imagen- models (different API)
+    seen = set()
+    gemini_models = []
+    for m in _GEMINI_MODELS:
+        if m not in seen and not m.startswith("imagen-"):
+            seen.add(m)
+            gemini_models.append(m)
+
+    last_exc = None
+    for attempt_model in gemini_models:
+        for attempt in range(3):
+            try:
+                resp = client.models.generate_content(
+                    model=attempt_model,
+                    contents=[full_prompt],
+                    config=gtypes.GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"]
+                    ),
+                )
+                for part in resp.candidates[0].content.parts:
+                    if getattr(part, "inline_data", None):
+                        if attempt_model != model:
+                            print(f"  [gemini-img] used model {attempt_model}")
+                        return part.inline_data.data
+                raise RuntimeError("Gemini returned no image data")
+            except Exception as e:
+                last_exc = e
+                err_str = str(e)
+                is_retryable = any(x in err_str for x in (
+                    "503", "UNAVAILABLE", "high demand", "429", "RESOURCE_EXHAUSTED"
+                ))
+                if is_retryable:
+                    wait = (2 ** attempt) * 5  # 5s, 10s, 20s
+                    print(f"  [gemini-img] {attempt_model} busy (attempt {attempt+1}/3) — retrying in {wait}s")
+                    time.sleep(wait)
+                else:
+                    if verbose or not _gemini_err_quiet(e):
+                        print(f"  [gemini-img] {attempt_model} → {str(e)[:80]}")
+                    break  # 404 / bad request → skip to next model
+
+    # ── Tier 2: Imagen via generate_images API ───────────────────────────────
+    _IMAGEN_MODELS = [
+        "imagen-4.0-fast-generate-001",
+        "imagen-3.0-generate-002",
+    ]
+    for imagen_model in _IMAGEN_MODELS:
+        try:
+            from google.genai import types as _gtypes
+            if verbose:
+                print(f"  [gemini-img] trying Imagen ({imagen_model})")
+            img_resp = client.models.generate_images(
+                model=imagen_model,
+                prompt=full_prompt,
+                config=_gtypes.GenerateImagesConfig(number_of_images=1),
+            )
+            raw = img_resp.generated_images[0].image.image_bytes
+            if raw:
+                print(f"  [gemini-img] Imagen succeeded ({imagen_model})")
+                return raw
+        except Exception as e:
+            last_exc = e
+            if verbose or not _gemini_err_quiet(e):
+                print(f"  [gemini-img] Imagen {imagen_model} failed: {str(e)[:80]}")
+
+    # ── Tier 3: OpenAI fallback (if key available) ───────────────────────────
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
+        print("  [gemini-img] falling back to OpenAI gpt-image-1")
+        return _generate_with_openai(full_prompt, "gpt-image-1", "1024x1024", "low")
+
+    raise RuntimeError(
+        f"All image generation providers failed. "
+        f"Add OPENAI_API_KEY as a fallback, or check Gemini quota. "
+        f"Last Gemini error: {last_exc}"
     )
-    for part in resp.candidates[0].content.parts:
-        if getattr(part, "inline_data", None):
-            return part.inline_data.data
-    raise RuntimeError("Gemini returned no image data")
 
 
 def generate_image(
@@ -146,7 +232,9 @@ def generate_image(
 
         except Exception as e:  # noqa: BLE001
             last_err = e
-            wait = 2 ** attempt
+            err_str = str(e)
+            is_overload = any(x in err_str for x in ("503", "UNAVAILABLE", "high demand", "429", "RESOURCE_EXHAUSTED"))
+            wait = (2 ** attempt) * (10 if is_overload else 2)  # longer waits for overload
             print(f"  [image retry {attempt+1}/{retries}] {type(e).__name__}: {str(e)[:120]}; sleeping {wait}s")
             time.sleep(wait)
 

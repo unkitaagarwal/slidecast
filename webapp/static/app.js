@@ -15,7 +15,8 @@
   const resultTitle = $('#result-title');
   const resultSubtitle = $('#result-subtitle');
   const copyCaptionBtn = $('#copy-caption');
-  const openFolderEl = $('#open-folder');
+  const openFolderEl  = $('#open-folder');
+  const downloadZipEl = $('#download-zip');
   const railComp = $('#rail-comp');
   const railSingle = $('#rail-single');
   const countComp = $('#count-comp');
@@ -98,10 +99,16 @@
     jobBar.style.width = '4%';
 
     try {
+      // Pass signed-in user email so the server can log to Firestore
+      const _scUser = JSON.parse(localStorage.getItem('sc_user') || '{}');
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ format: selectedFmt, input: prompt }),
+        body: JSON.stringify({
+          format:     selectedFmt,
+          input:      prompt,
+          user_email: _scUser.email || null,
+        }),
       });
       if (!res.ok) {
         const err = await res.text();
@@ -157,9 +164,16 @@
         if (j.status === 'done') {
           jobBar.style.width = '100%';
           jobTitle.textContent = 'Ready';
-          jobMsg.textContent = 'Carousel composited and saved to disk';
-          await loadPreview(j.result.format, j.result.slug);
-          break;
+          jobMsg.textContent = j.result?.slide_urls?.length
+            ? '✓ Slides uploaded to Firebase — ready to download & share'
+            : 'Carousel composited and saved';
+          try {
+            await loadPreview(j.result.format, j.result.slug, j.result.slide_urls || []);
+          } catch (renderErr) {
+            console.error('renderResult error:', renderErr);
+            jobMsg.textContent = 'Done — slides saved' + (j.result?.slide_urls?.length ? ' & uploaded to Firebase' : '');
+          }
+          break;  // always break, even if preview rendering threw
         }
         if (j.status === 'failed') {
           jobTitle.textContent = 'Failed';
@@ -181,13 +195,15 @@
     refreshLibrary();
   }
 
-  async function loadPreview(format, slug) {
+  async function loadPreview(format, slug, slideUrls = []) {
     const res = await fetch(`/api/preview/${format}/${slug}`);
     if (!res.ok) {
       alert('Preview failed');
       return;
     }
     const data = await res.json();
+    // Attach Firebase URLs from the job result if available
+    if (slideUrls.length) data.slide_urls = slideUrls;
     renderResult(data);
   }
 
@@ -211,12 +227,62 @@
       slidesGrid.appendChild(t);
     });
 
-    const folderRel = data.format === 'single'
-      ? `output/${data.slug}/slides/`
-      : `output_compilations/${data.slug}/slides/`;
-    openFolderEl.title = folderRel;
-    openFolderEl.textContent = folderRel;
+    // ── Download / path row ──────────────────────────────────────────────────
+    // Re-query each time in case the DOM was built after script init
+    const _dlBtn    = downloadZipEl    || document.getElementById('download-zip');
+    const _folderEl = openFolderEl     || document.getElementById('open-folder');
+    const firebaseUrls = data.slide_urls || [];
+    if (firebaseUrls.length) {
+      // Firebase URLs available → show Download slides button
+      if (_dlBtn)    { _dlBtn.style.display    = 'inline-flex'; _dlBtn.onclick = () => _downloadSlidesZip(data.slug, firebaseUrls); }
+      if (_folderEl) { _folderEl.style.display = 'none'; }
+    } else {
+      // Fallback: show local path tag
+      if (_dlBtn)    { _dlBtn.style.display    = 'none'; }
+      if (_folderEl) {
+        const folderRel = data.format === 'single'
+          ? `output/${data.slug}/slides/`
+          : `output_compilations/${data.slug}/slides/`;
+        _folderEl.style.display = '';
+        _folderEl.title         = folderRel;
+        _folderEl.textContent   = folderRel;
+      }
+    }
+
     setTimeout(() => resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+  }
+
+  // Download all slides + caption.txt + metadata.json as a single ZIP
+  async function _downloadSlidesZip(slug, urls) {
+    const _btn = downloadZipEl || document.getElementById('download-zip');
+    if (!_btn) return;
+
+    const _origHTML = _btn.innerHTML;
+    _btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-6.22-8.56"/></svg> Zipping…`;
+    _btn.style.pointerEvents = 'none';
+
+    try {
+      // Server builds the ZIP (slides + caption.txt + metadata.json)
+      const format = currentResult?.format || 'compilation';
+      const res = await fetch(`/api/download-zip/${format}/${slug}`);
+      if (!res.ok) throw new Error(`Server ZIP failed: ${res.status}`);
+
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${slug}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      console.error('ZIP download error:', e);
+      // Fallback: open slides individually in new tabs
+      (urls || []).forEach(u => window.open(u, '_blank'));
+    } finally {
+      _btn.innerHTML = _origHTML;
+      _btn.style.pointerEvents = '';
+    }
   }
 
   copyCaptionBtn.addEventListener('click', async () => {

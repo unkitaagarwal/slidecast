@@ -509,29 +509,45 @@ class JobStore:
 
 
 JOBS = JobStore()
-EXECUTOR = ThreadPoolExecutor(max_workers=4)
+EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
 
 # ---------------------------------------------------------------------------
 # Pipeline wrappers (run in worker threads)
 # ---------------------------------------------------------------------------
 
-def _run_single(job_id: str, brief: str):
+def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
     try:
         JOBS.update(job_id, status="running", message="Generating recipe with Gemini…")
         single = _import_single()
-        # run_one_recipe returns the recipe dir
-        rdir = single.run_one_recipe(brief)
-        slug = os.path.basename(rdir)
+        rdir   = single.run_one_recipe(brief)
+        slug   = os.path.basename(rdir)
         slides = sorted(
             f for f in os.listdir(os.path.join(rdir, "slides"))
             if f.endswith(".png")
         )
+
+        # Upload to Firebase Storage + log to Firestore
+        JOBS.update(job_id, message="Uploading slides to Firebase…")
+        slide_urls = _upload_slides_and_log(
+            slides_dir     = os.path.join(rdir, "slides"),
+            format_name    = "single",
+            slug           = slug,
+            user_email     = user_email,
+            theme          = brief,
+            slide_filenames= slides,
+        )
+
         JOBS.update(
             job_id,
             status="done",
             message=f"Done — {slug}",
-            result={"format": "single", "slug": slug, "slides": slides},
+            result={
+                "format":     "single",
+                "slug":       slug,
+                "slides":     slides,
+                "slide_urls": slide_urls,
+            },
         )
     except Exception as e:
         traceback.print_exc()
@@ -541,7 +557,8 @@ def _run_single(job_id: str, brief: str):
 
 def _run_compilation(job_id: str, theme: str,
                      brand_card_path: Optional[str] = None,
-                     brand_name: Optional[str] = None):
+                     brand_name: Optional[str] = None,
+                     user_email: Optional[str] = None):
     try:
         JOBS.update(job_id, status="running",
                     message="Generating 5 recipes with Gemini…")
@@ -552,11 +569,28 @@ def _run_compilation(job_id: str, theme: str,
             f for f in os.listdir(os.path.join(cdir, "slides"))
             if f.endswith(".png")
         )
+
+        # Upload to Firebase Storage + log to Firestore
+        JOBS.update(job_id, message="Uploading slides to Firebase…")
+        slide_urls = _upload_slides_and_log(
+            slides_dir     = os.path.join(cdir, "slides"),
+            format_name    = "compilation",
+            slug           = slug,
+            user_email     = user_email,
+            theme          = theme,
+            slide_filenames= slides,
+        )
+
         JOBS.update(
             job_id,
             status="done",
             message=f"Done — {slug}",
-            result={"format": "compilation", "slug": slug, "slides": slides},
+            result={
+                "format":     "compilation",
+                "slug":       slug,
+                "slides":     slides,
+                "slide_urls": slide_urls,
+            },
         )
     except Exception as e:
         traceback.print_exc()
@@ -579,6 +613,7 @@ app = FastAPI(title="Slidecast Studio")
 class GenerateBody(BaseModel):
     format: str  # "single" or "compilation"
     input: str   # brief or theme
+    user_email: Optional[str] = None  # signed-in user — used to log to Firestore
     # Optional brand override (paid users only — frontend gates this).
     # When present the compilation pipeline swaps in the user's brand
     # image and brand name on the final CTA slide. Free / anon users
@@ -615,6 +650,111 @@ def _save_brand_image_from_data_url(data_url: str, job_id: str) -> Optional[str]
         return None
 
 
+# ---------------------------------------------------------------------------
+# Firebase Storage upload + Firestore generation log
+# ---------------------------------------------------------------------------
+
+FIREBASE_STORAGE_BUCKET = "slidecast-75f5c.firebasestorage.app"  # already defined above but used here too
+
+def _firebase_admin_init():
+    """Lazy-init firebase-admin SDK.
+
+    Credential resolution order (first match wins):
+      1. GOOGLE_APPLICATION_CREDENTIALS_JSON  — full service-account JSON as
+         a string (best for Render: paste the JSON directly into an env var)
+      2. GOOGLE_APPLICATION_CREDENTIALS       — path to a service-account JSON
+         file (works locally or with Render Secret Files)
+      3. Application Default Credentials      — fallback (GCP-managed envs)
+    """
+    try:
+        import firebase_admin
+        from firebase_admin import credentials as _creds
+        if not firebase_admin._apps:
+            cred_json_str = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "").strip()
+            cred_path     = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+
+            if cred_json_str:
+                # Inline JSON — cleanest approach for Render env vars
+                sa_info = json.loads(cred_json_str)
+                cred = _creds.Certificate(sa_info)
+                print("  [firebase-admin] init via GOOGLE_APPLICATION_CREDENTIALS_JSON")
+            elif cred_path and os.path.exists(cred_path):
+                cred = _creds.Certificate(cred_path)
+                print(f"  [firebase-admin] init via credential file: {cred_path}")
+            else:
+                cred = _creds.ApplicationDefault()
+                print("  [firebase-admin] init via ApplicationDefault credentials")
+
+            firebase_admin.initialize_app(cred, {
+                "storageBucket": FIREBASE_STORAGE_BUCKET,
+            })
+        return firebase_admin
+    except Exception as e:
+        print(f"  [firebase-admin] init failed: {e}")
+        return None
+
+
+def _upload_slides_and_log(
+    slides_dir: str,
+    format_name: str,   # "compilation" | "single"
+    slug: str,
+    user_email: Optional[str],
+    theme: str,
+    slide_filenames: list,
+) -> list:
+    """Upload all slide PNGs from slides_dir to Firebase Storage and write a
+    generation record to Firestore under users/{email}/generations/{slug}.
+
+    Returns list of public CDN URLs for the uploaded slides.
+    """
+    try:
+        fa = _firebase_admin_init()
+        if fa is None:
+            print("  [upload] firebase-admin unavailable — skipping upload")
+            return []
+
+        from firebase_admin import storage as _fa_storage, firestore as _fa_fs
+
+        bucket = _fa_storage.bucket()
+        slide_urls = []
+
+        for fname in slide_filenames:
+            local_path   = os.path.join(slides_dir, fname)
+            storage_path = f"carousels/{format_name}/{slug}/slides/{fname}"
+            blob = bucket.blob(storage_path)
+            blob.upload_from_filename(local_path, content_type="image/png")
+            blob.make_public()
+            slide_urls.append(blob.public_url)
+            print(f"  [upload] ↑ {fname}")
+
+        # Write generation record to Firestore
+        if user_email and slide_urls:
+            db = _fa_fs.client()
+            gen_ref = (
+                db.collection("users")
+                  .document(user_email)
+                  .collection("generations")
+                  .document(slug)
+            )
+            gen_ref.set({
+                "slug":        slug,
+                "format":      format_name,
+                "theme":       theme,
+                "slide_urls":  slide_urls,
+                "slide_count": len(slide_urls),
+                "created_at":  _fa_fs.SERVER_TIMESTAMP,
+            })
+            print(f"  [firestore] logged generation {slug} → users/{user_email}/generations/{slug}")
+
+        return slide_urls
+
+    except Exception as e:
+        # Never crash the pipeline — upload is best-effort
+        print(f"  [upload] ERROR: {e}")
+        traceback.print_exc()
+        return []
+
+
 @app.post("/api/generate")
 def api_generate(body: GenerateBody):
     if body.format not in ("single", "compilation"):
@@ -634,14 +774,13 @@ def api_generate(body: GenerateBody):
         if data_url:
             brand_card_path = _save_brand_image_from_data_url(data_url, job_id)
 
+    user_email = (body.user_email or "").strip() or None
+
     if body.format == "single":
-        # Single-recipe pipeline doesn't yet accept brand overrides — passes
-        # silently for now; harmless because frontend currently only gates the
-        # compilation flow through brand kit anyway.
-        EXECUTOR.submit(_run_single, job_id, text)
+        EXECUTOR.submit(_run_single, job_id, text, user_email)
     else:
         EXECUTOR.submit(_run_compilation, job_id, text,
-                        brand_card_path, brand_name)
+                        brand_card_path, brand_name, user_email)
     return {"job_id": job_id}
 
 
@@ -894,6 +1033,100 @@ def api_preview(format: str, slug: str):
         "spec":        {"title": title, "slug": slug},
         "slides_base": "firebase",
     }
+
+
+@app.get("/api/download-zip/{format}/{slug}")
+def api_download_zip(format: str, slug: str):
+    """Build and stream a ZIP containing all slide PNGs + caption.txt + metadata.json."""
+    from fastapi.responses import StreamingResponse
+    import io as _io_z
+
+    if format not in ("single", "compilation"):
+        raise HTTPException(400, "bad format")
+
+    # ── Gather slides & spec ─────────────────────────────────────────────────
+    cdir = (_resolve_single_dir(slug) if format == "single"
+            else _resolve_comp_dir(slug))
+
+    slides_data: list[tuple[str, bytes]] = []  # [(filename, bytes), ...]
+    spec: dict = {}
+    caption: str = ""
+
+    if cdir and os.path.isdir(cdir):
+        # Load spec JSON
+        jpath = os.path.join(cdir, f"{slug}.json")
+        if os.path.exists(jpath):
+            with open(jpath) as f:
+                spec = json.load(f)
+
+        # Read slides from disk
+        slides_dir = os.path.join(cdir, "slides")
+        for fname in sorted(os.listdir(slides_dir)):
+            if fname.endswith(".png"):
+                with open(os.path.join(slides_dir, fname), "rb") as f:
+                    slides_data.append((fname, f.read()))
+
+        # Build caption
+        try:
+            if format == "compilation":
+                cap = _import_caption()
+                spec.setdefault("slug", slug)
+                caption = cap.build_caption(spec)
+            else:
+                sys.path.insert(0, os.path.join(ROOT, "pipeline"))
+                from postiz_publish import build_caption as _sc
+                caption = _sc(spec)
+        except Exception:
+            caption = f"✨ {_slug_to_title(slug)}\n\n#food #recipe #foodie"
+
+    else:
+        # Fall back to Firebase Storage — download each slide via HTTP
+        slide_names = _firebase_list_slides(format, slug)
+        if not slide_names:
+            raise HTTPException(404, "slug not found locally or in Firebase")
+        for fname in slide_names:
+            url = _firebase_url(format, slug, fname)
+            try:
+                data = _urlreq.urlopen(url, timeout=30).read()
+                slides_data.append((fname, data))
+            except Exception as e:
+                print(f"  [zip] failed to fetch {fname}: {e}")
+        spec    = {"title": _slug_to_title(slug), "slug": slug}
+        caption = f"✨ {_slug_to_title(slug)}\n\n#food #recipe #foodie"
+
+    if not slides_data:
+        raise HTTPException(404, "no slides found to zip")
+
+    # ── Build ZIP in memory ──────────────────────────────────────────────────
+    buf = _io_z.BytesIO()
+    folder = slug  # files go inside a folder named after the slug
+    with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as zf:
+        # Slides — nested inside a slides/ subfolder
+        for fname, data in slides_data:
+            zf.writestr(f"{folder}/slides/{fname}", data)
+
+        # Caption
+        if caption:
+            zf.writestr(f"{folder}/caption.txt", caption)
+
+        # Metadata JSON (title, subtitle, hashtags, hook, etc.)
+        meta = {
+            "slug":     slug,
+            "format":   format,
+            "title":    spec.get("title") or spec.get("hook_caption") or _slug_to_title(slug),
+            "subtitle": spec.get("short_pitch") or spec.get("theme") or "",
+            "hashtags": spec.get("hashtags") or "",
+            "caption":  caption,
+        }
+        zf.writestr(f"{folder}/metadata.json", json.dumps(meta, indent=2))
+
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{slug}.zip"'},
+    )
 
 
 @app.get("/images/{format}/{slug}/{filename}")
@@ -1430,13 +1663,20 @@ def api_file(path: str = ""):
     return FileResponse(file_path, media_type=mime)
 
 
+_MAX_UPLOAD_BYTES = 120 * 1024 * 1024  # 120 MB hard cap
+
 @app.post("/api/upload")
 async def api_upload(request: Request):
     """Proxy multipart file upload to the Postiz API."""
+    cl = int(request.headers.get("content-length", 0))
+    if cl > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"File too large (max {_MAX_UPLOAD_BYTES//1024//1024} MB)")
     auth = request.headers.get("Authorization", "")
     ct   = request.headers.get("Content-Type", "application/json")
     body = await request.body()
-    return _postiz_proxy_post("/upload", auth, body, ct)
+    result = _postiz_proxy_post("/upload", auth, body, ct)
+    del body
+    return result
 
 
 @app.post("/api/posts")
@@ -1461,10 +1701,8 @@ async def api_upload_from_path(request: Request):
 
     filename  = os.path.basename(file_path)
     mime_type = _mimetypes.guess_type(file_path)[0] or "application/octet-stream"
-    with open(file_path, "rb") as fh:
-        file_data = fh.read()
-
-    print(f"  [upload-from-path] {filename} ({len(file_data)//1024} KB)")
+    file_size = os.path.getsize(file_path)
+    print(f"  [upload-from-path] {filename} ({file_size//1024} KB)")
     boundary  = uuid.uuid4().hex
     part_head = (
         f"--{boundary}\r\n"
@@ -1472,11 +1710,16 @@ async def api_upload_from_path(request: Request):
         f"Content-Type: {mime_type}\r\n\r\n"
     ).encode()
     part_tail = f"\r\n--{boundary}--\r\n".encode()
-    return _postiz_proxy_post(
-        "/upload", auth,
-        part_head + file_data + part_tail,
+    with open(file_path, "rb") as fh:
+        file_data = fh.read()
+    body = part_head + file_data + part_tail
+    del file_data  # free before HTTP call
+    result = _postiz_proxy_post(
+        "/upload", auth, body,
         f"multipart/form-data; boundary={boundary}",
     )
+    del body
+    return result
 
 
 @app.get("/api/stitch-download")
@@ -1541,6 +1784,8 @@ async def api_stitch_videos(request: Request):
         if "multipart/form-data" in ct:
             raw  = await request.body()
             form = _parse_multipart(ct, raw)
+            del raw  # release the raw buffer; bytes now live only inside `form`
+            import gc as _gc; _gc.collect()
 
             src_entries = form.get("source", [])
             cta_entries = form.get("cta",    [])
@@ -1557,6 +1802,7 @@ async def api_stitch_videos(request: Request):
             cta_path = os.path.join(tmp_dir, f"cta{ext_c}")
             with open(cta_path, "wb") as fh:
                 fh.write(cta_entries[0]["data"])
+            cta_entries[0]["data"] = b""  # free after writing to disk
 
             for i, entry in enumerate(src_entries):
                 if not entry.get("filename"):
@@ -1566,6 +1812,7 @@ async def api_stitch_videos(request: Request):
                 sp    = os.path.join(tmp_dir, f"src_{i}{ext_s}")
                 with open(sp, "wb") as fh:
                     fh.write(entry["data"])
+                entry["data"] = b""  # free after writing to disk
                 source_paths.append(sp)
                 source_labels.append(os.path.splitext(base_name)[0])
         else:
@@ -1736,6 +1983,8 @@ async def api_slideshow_to_video_upload(request: Request):
 
     raw  = await request.body()
     form = _parse_multipart(ct, raw)
+    del raw  # release buffer; bytes are inside `form` now
+    import gc as _gc; _gc.collect()
 
     file_entries      = form.get("file", [])
     sec_entries       = form.get("seconds_per_slide", [])
@@ -1769,6 +2018,9 @@ async def api_slideshow_to_video_upload(request: Request):
             fpath    = os.path.join(tmp_dir, fname)
             with open(fpath, "wb") as fh:
                 fh.write(img_data)
+            # Free slide bytes from memory immediately after writing to disk
+            if isinstance(entry, dict):
+                entry["data"] = b""
             image_paths.append(fpath)
 
         if not image_paths:
@@ -1905,6 +2157,9 @@ async def api_upload_tiktok_video(request: Request):
 
     Returns the Postiz upload response: { "id": "...", "path": "..." }
     """
+    cl = int(request.headers.get("content-length", 0))
+    if cl > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"File too large (max {_MAX_UPLOAD_BYTES//1024//1024} MB)")
     auth = request.headers.get("Authorization", "")
     ct   = request.headers.get("Content-Type", "")
 
@@ -1925,6 +2180,8 @@ async def api_upload_tiktok_video(request: Request):
         vid_path = os.path.join(tmp_dir, orig_name)
         with open(vid_path, "wb") as fh:
             fh.write(video_bytes)
+        del video_bytes  # free RAM — file is now on disk
+        import gc as _gc; _gc.collect()
 
         # ── Step 1: does the video have an audio stream at all? ──────
         probe = _subprocess.run(
@@ -2003,10 +2260,8 @@ async def api_upload_tiktok_video(request: Request):
         # ── upload processed (or original) video to Postiz ───────────
         filename  = os.path.basename(upload_path)
         mime_type = _mimetypes.guess_type(upload_path)[0] or "video/mp4"
-        with open(upload_path, "rb") as fh:
-            file_data = fh.read()
-
-        print(f"[tiktok-upload] uploading {filename} ({len(file_data)//1024} KB) to Postiz")
+        file_size = os.path.getsize(upload_path)
+        print(f"[tiktok-upload] uploading {filename} ({file_size//1024} KB) to Postiz")
         boundary  = uuid.uuid4().hex
         part_head = (
             f"--{boundary}\r\n"
@@ -2014,11 +2269,17 @@ async def api_upload_tiktok_video(request: Request):
             f"Content-Type: {mime_type}\r\n\r\n"
         ).encode()
         part_tail = f"\r\n--{boundary}--\r\n".encode()
-        return _postiz_proxy_post(
-            "/upload", auth,
-            part_head + file_data + part_tail,
+        # Read once, build body, then discard immediately
+        with open(upload_path, "rb") as fh:
+            file_data = fh.read()
+        body = part_head + file_data + part_tail
+        del file_data  # free before the HTTP call
+        result = _postiz_proxy_post(
+            "/upload", auth, body,
             f"multipart/form-data; boundary={boundary}",
         )
+        del body
+        return result
 
     except HTTPException:
         raise

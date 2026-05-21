@@ -135,7 +135,9 @@ def _slugify(s: str) -> str:
 def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
                       temperature: float = 0.9) -> dict:
     """Call Gemini text model and return parsed JSON.
-    Uses the same GEMINI_API_KEY as the image gen (Nano Banana)."""
+    Uses the same GEMINI_API_KEY as the image gen (Nano Banana).
+    Retries on 503 with exponential backoff, then falls back to gemini-1.5-flash."""
+    import time as _time
     from google import genai
     from google.genai import types as gtypes
 
@@ -144,16 +146,42 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
         raise RuntimeError("GEMINI_API_KEY missing from environment")
     client = genai.Client(api_key=api_key)
 
-    resp = client.models.generate_content(
-        model=model,
-        contents=[system_prompt + "\n\n" + user_prompt],
-        config=gtypes.GenerateContentConfig(
-            temperature=temperature,
-            response_mime_type="application/json",
-        ),
-    )
-    raw = resp.candidates[0].content.parts[0].text
-    return json.loads(raw)
+    # Model priority: try requested model first, then stable fallbacks
+    models_to_try = [model]
+    if model != "gemini-1.5-flash":
+        models_to_try.append("gemini-1.5-flash")
+    if "gemini-2.0-flash" not in models_to_try:
+        models_to_try.append("gemini-2.0-flash")
+
+    last_exc = None
+    for attempt_model in models_to_try:
+        for attempt in range(3):  # up to 3 retries per model
+            try:
+                resp = client.models.generate_content(
+                    model=attempt_model,
+                    contents=[system_prompt + "\n\n" + user_prompt],
+                    config=gtypes.GenerateContentConfig(
+                        temperature=temperature,
+                        response_mime_type="application/json",
+                    ),
+                )
+                raw = resp.candidates[0].content.parts[0].text
+                if attempt_model != model:
+                    print(f"  [gemini] used fallback model {attempt_model}")
+                return json.loads(raw)
+            except Exception as e:
+                last_exc = e
+                err_str = str(e)
+                is_503 = "503" in err_str or "UNAVAILABLE" in err_str or "high demand" in err_str
+                is_429 = "429" in err_str or "quota" in err_str.lower() or "RESOURCE_EXHAUSTED" in err_str
+                if is_503 or is_429:
+                    wait = (2 ** attempt) * 5  # 5s, 10s, 20s
+                    print(f"  [gemini] {attempt_model} overloaded (attempt {attempt+1}/3) — retrying in {wait}s")
+                    _time.sleep(wait)
+                else:
+                    break  # non-retryable error, try next model immediately
+
+    raise RuntimeError(f"All Gemini models failed. Last error: {last_exc}")
 
 
 def generate_compilation(theme: str, model: str = "gemini-2.5-flash") -> Compilation:
