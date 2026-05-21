@@ -13,7 +13,6 @@ from __future__ import annotations
 import base64
 import os
 import time
-from openai import OpenAI
 
 # A single style suffix applied to every prompt. This is what makes 100 recipes
 # look like one cohesive feed instead of a random assortment.
@@ -78,6 +77,7 @@ def build_prompt(base_prompt: str, slide_type: str) -> str:
 
 
 def _generate_with_openai(full_prompt: str, model: str, size: str, quality: str) -> bytes:
+    from openai import OpenAI  # lazy import — only needed when used as fallback
     client = OpenAI()
     kwargs = dict(model=model, prompt=full_prompt, size=size, n=1)
     if model.startswith("gpt-image-1"):
