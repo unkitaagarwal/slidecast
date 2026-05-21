@@ -132,6 +132,9 @@ function renderSignedOut() {
 
 injectStyles();
 onAuthStateChanged(auth, user => {
+  // Expose email globally so app.js can include it in /api/generate requests
+  // for Firestore generation logging.
+  window._sc_email = user ? (user.email || "") : "";
   if (user) renderUser(user);
   else      renderSignedOut();
 });
