@@ -113,7 +113,11 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY missing from environment")
-    client = genai.Client(api_key=api_key)
+    # Hard per-request timeout so a hung API call never blocks the thread
+    # indefinitely. 90 s is generous for image generation; adjust if needed.
+    _timeout = int(os.environ.get("GEMINI_IMAGE_TIMEOUT", "90"))
+    client = genai.Client(api_key=api_key,
+                          http_options={"timeout": _timeout})
     verbose = os.environ.get("GEMINI_IMAGE_VERBOSE", "").lower() in ("1", "true", "yes")
 
     # ── Tier 1: Gemini generate_content models ───────────────────────────────
@@ -208,7 +212,7 @@ def generate_image(
     model: str = "gemini-2.0-flash-preview-image-generation",
     size: str = "1024x1024",
     quality: str = "high",   # for gpt-image-1 family
-    retries: int = 2,
+    retries: int = 0,
 ) -> str:
     """Generate a single image and write it to output_path. Returns the path.
 
