@@ -33,7 +33,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait as _futures_wait
 
 
 def _load_env():
@@ -99,9 +99,20 @@ def run_one_compilation(theme: str) -> str:
     for i, r in enumerate(comp.recipes, 1):
         tasks.append((f"hero{i}", r.hero_image_prompt, "hero"))
 
+    # Hard wall-clock limit on the image generation phase.
+    # 6 images in parallel, each capped at ~90 s by the Gemini client timeout;
+    # allow 3 min total so even a slow provider has breathing room but a
+    # completely hung call cannot block the job forever.
+    _IMAGE_TIMEOUT = int(os.environ.get("IMAGE_GEN_TIMEOUT", "180"))
+
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {pool.submit(_gen, n, p, st): n for n, p, st in tasks}
-        for f in as_completed(futures):
+        done, not_done = _futures_wait(futures, timeout=_IMAGE_TIMEOUT)
+        for f in not_done:
+            n = futures[f]
+            f.cancel()
+            print(f"  RAW TIMEOUT {n}: image took >{_IMAGE_TIMEOUT}s — skipping")
+        for f in done:
             n = futures[f]
             try:
                 f.result()
