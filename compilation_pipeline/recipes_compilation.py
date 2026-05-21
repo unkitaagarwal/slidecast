@@ -151,7 +151,9 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY missing from environment")
-    client = genai.Client(api_key=api_key)
+    _timeout = int(os.environ.get("GEMINI_TEXT_TIMEOUT", "60"))
+    client = genai.Client(api_key=api_key,
+                          http_options={"timeout": _timeout})
 
     # Model priority: try requested model first, then stable fallbacks
     models_to_try = [model]
