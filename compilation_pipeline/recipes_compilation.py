@@ -151,9 +151,11 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY missing from environment")
-    _timeout = int(os.environ.get("GEMINI_TEXT_TIMEOUT", "60"))
+    # gemini-2.5-flash is a thinking model — it can take 90-150s on Render.
+    # GEMINI_TEXT_TIMEOUT is in seconds; google-genai http_options timeout is ms.
+    _timeout_s = max(int(os.environ.get("GEMINI_TEXT_TIMEOUT", "180")), 10)
     client = genai.Client(api_key=api_key,
-                          http_options={"timeout": _timeout})
+                          http_options={"timeout": _timeout_s * 1000})
 
     # Model priority: try requested model first, then stable fallbacks
     models_to_try = [model]
@@ -181,11 +183,14 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
             except Exception as e:
                 last_exc = e
                 err_str = str(e)
-                is_503 = "503" in err_str or "UNAVAILABLE" in err_str or "high demand" in err_str
-                is_429 = "429" in err_str or "quota" in err_str.lower() or "RESOURCE_EXHAUSTED" in err_str
-                if is_503 or is_429:
+                is_503    = "503" in err_str or "UNAVAILABLE" in err_str or "high demand" in err_str
+                is_429    = "429" in err_str or "quota" in err_str.lower() or "RESOURCE_EXHAUSTED" in err_str
+                is_timeout = ("timed out" in err_str.lower() or "timeout" in err_str.lower()
+                              or "deadline" in err_str.lower() or "read operation" in err_str.lower())
+                if is_503 or is_429 or is_timeout:
                     wait = (2 ** attempt) * 5  # 5s, 10s, 20s
-                    print(f"  [gemini] {attempt_model} overloaded (attempt {attempt+1}/3) — retrying in {wait}s")
+                    reason = "timed out" if is_timeout else "overloaded"
+                    print(f"  [gemini] {attempt_model} {reason} (attempt {attempt+1}/3) — retrying in {wait}s")
                     _time.sleep(wait)
                 else:
                     break  # non-retryable error, try next model immediately

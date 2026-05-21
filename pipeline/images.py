@@ -113,11 +113,10 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY missing from environment")
-    # Hard per-request timeout so a hung API call never blocks the thread
-    # indefinitely. 90 s is generous for image generation; adjust if needed.
-    _timeout = int(os.environ.get("GEMINI_IMAGE_TIMEOUT", "90"))
+    # GEMINI_IMAGE_TIMEOUT is in seconds; google-genai http_options timeout is ms.
+    _timeout_s = max(int(os.environ.get("GEMINI_IMAGE_TIMEOUT", "90")), 10)
     client = genai.Client(api_key=api_key,
-                          http_options={"timeout": _timeout})
+                          http_options={"timeout": _timeout_s * 1000})
     verbose = os.environ.get("GEMINI_IMAGE_VERBOSE", "").lower() in ("1", "true", "yes")
 
     # ── Tier 1: Gemini generate_content models ───────────────────────────────
