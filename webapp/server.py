@@ -527,6 +527,16 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
             if f.endswith(".png")
         )
 
+        # Build caption while local spec JSON still exists
+        caption = ""
+        try:
+            sys.path.insert(0, os.path.join(ROOT, "pipeline"))
+            from postiz_publish import build_caption as _sc
+            spec = json.load(open(os.path.join(rdir, f"{slug}.json")))
+            caption = _sc(spec)
+        except Exception as _e:
+            print(f"  [caption] build failed: {_e}")
+
         # Upload to Firebase Storage + log to Firestore
         JOBS.update(job_id, message="Uploading slides to Firebase…")
         slide_urls = _upload_slides_and_log(
@@ -536,7 +546,16 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
             user_email     = user_email,
             theme          = brief,
             slide_filenames= slides,
+            caption        = caption,
         )
+
+        # Clean up local output dir — slides are in Firebase, no need to keep them on disk
+        if slide_urls and rdir.startswith(SINGLE_OUT):
+            try:
+                _shutil.rmtree(rdir)
+                print(f"  [cleanup] removed local dir {rdir}")
+            except Exception as _ce:
+                print(f"  [cleanup] could not remove {rdir}: {_ce}")
 
         JOBS.update(
             job_id,
@@ -570,6 +589,16 @@ def _run_compilation(job_id: str, theme: str,
             if f.endswith(".png")
         )
 
+        # Build caption while local spec JSON still exists
+        caption = ""
+        try:
+            cap_mod = _import_caption()
+            spec = json.load(open(os.path.join(cdir, f"{slug}.json")))
+            spec.setdefault("slug", slug)
+            caption = cap_mod.build_caption(spec)
+        except Exception as _e:
+            print(f"  [caption] build failed: {_e}")
+
         # Upload to Firebase Storage + log to Firestore
         JOBS.update(job_id, message="Uploading slides to Firebase…")
         slide_urls = _upload_slides_and_log(
@@ -579,7 +608,16 @@ def _run_compilation(job_id: str, theme: str,
             user_email     = user_email,
             theme          = theme,
             slide_filenames= slides,
+            caption        = caption,
         )
+
+        # Clean up local output dir — slides are in Firebase, no need to keep them on disk
+        if slide_urls and cdir.startswith(COMP_OUT):
+            try:
+                _shutil.rmtree(cdir)
+                print(f"  [cleanup] removed local dir {cdir}")
+            except Exception as _ce:
+                print(f"  [cleanup] could not remove {cdir}: {_ce}")
 
         JOBS.update(
             job_id,
@@ -701,9 +739,13 @@ def _upload_slides_and_log(
     user_email: Optional[str],
     theme: str,
     slide_filenames: list,
+    caption: str = "",
 ) -> list:
     """Upload all slide PNGs from slides_dir to Firebase Storage and write a
     generation record to Firestore under users/{email}/generations/{slug}.
+
+    Also saves caption.txt to Firebase Storage so api_preview can retrieve it
+    after the local directory has been cleaned up.
 
     Returns list of public CDN URLs for the uploaded slides.
     """
@@ -727,6 +769,13 @@ def _upload_slides_and_log(
             slide_urls.append(blob.public_url)
             print(f"  [upload] ↑ {fname}")
 
+        # Save caption.txt to Firebase Storage so preview works after local cleanup
+        if caption:
+            cap_blob = bucket.blob(f"carousels/{format_name}/{slug}/caption.txt")
+            cap_blob.upload_from_string(caption, content_type="text/plain; charset=utf-8")
+            cap_blob.make_public()
+            print(f"  [upload] ↑ caption.txt")
+
         # Write generation record to Firestore
         if user_email and slide_urls:
             db = _fa_fs.client()
@@ -742,6 +791,7 @@ def _upload_slides_and_log(
                 "theme":       theme,
                 "slide_urls":  slide_urls,
                 "slide_count": len(slide_urls),
+                "caption":     caption,
                 "created_at":  _fa_fs.SERVER_TIMESTAMP,
             })
             print(f"  [firestore] logged generation {slug} → users/{user_email}/generations/{slug}")
@@ -1023,13 +1073,24 @@ def api_preview(format: str, slug: str):
     slide_urls = [_firebase_url(format, slug, s) for s in slides]
     title      = _slug_to_title(slug)
 
+    # Try to fetch the caption.txt saved alongside the slides during upload
+    caption = ""
+    caption_url = f"{FIREBASE_STORAGE_BASE}/carousels/{format}/{slug}/caption.txt"
+    try:
+        caption = _urlreq.urlopen(caption_url, timeout=5).read().decode("utf-8")
+    except Exception:
+        pass  # caption.txt not found — will use fallback below
+
+    if not caption:
+        caption = f"✨ {title}\n\n#food #recipe #foodie #carousel"
+
     return {
         "format":      format,
         "slug":        slug,
         "title":       title,
         "subtitle":    "",
         "slides":      slide_urls,
-        "caption":     f"✨ {title}\n\n#food #recipe #foodie #carousel",
+        "caption":     caption,
         "spec":        {"title": title, "slug": slug},
         "slides_base": "firebase",
     }
@@ -1109,14 +1170,22 @@ def api_download_zip(format: str, slug: str):
         if caption:
             zf.writestr(f"{folder}/caption.txt", caption)
 
-        # Metadata JSON (title, subtitle, hashtags, hook, etc.)
+        # Metadata JSON (title, subtitle, hashtags, hook, CTA copy, caption)
+        _CTA_CAPTION = (
+            spec.get("cta_caption") or [
+                "Here's the trick for saving recipes:",
+                "Like > Share > RecipeVault.",
+                "That's all it takes to keep the full recipe.",
+            ]
+        )
         meta = {
-            "slug":     slug,
-            "format":   format,
-            "title":    spec.get("title") or spec.get("hook_caption") or _slug_to_title(slug),
-            "subtitle": spec.get("short_pitch") or spec.get("theme") or "",
-            "hashtags": spec.get("hashtags") or "",
-            "caption":  caption,
+            "slug":        slug,
+            "format":      format,
+            "title":       spec.get("title") or spec.get("hook_caption") or _slug_to_title(slug),
+            "subtitle":    spec.get("short_pitch") or spec.get("theme") or "",
+            "hashtags":    spec.get("hashtags") or "",
+            "cta_caption": _CTA_CAPTION,
+            "caption":     caption,
         }
         zf.writestr(f"{folder}/metadata.json", json.dumps(meta, indent=2))
 
