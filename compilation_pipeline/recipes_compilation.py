@@ -23,6 +23,13 @@ import os
 import re
 from dataclasses import dataclass, field, asdict
 
+# Fixed CTA copy — same on every single slideshow, never AI-generated
+CTA_CAPTION: list[str] = [
+    "Here's the trick for saving recipes:",
+    "Like > Share > RecipeVault.",
+    "That's all it takes to keep the full recipe.",
+]
+
 
 @dataclass
 class CompilationRecipe:
@@ -211,7 +218,7 @@ def generate_compilation(theme: str, model: str = "gemini-2.5-flash") -> Compila
         theme=data.get("theme", theme),
         hook_caption=data["hook_caption"],
         hook_image_prompt=data["hook_image_prompt"],
-        cta_caption=data["cta_caption"],
+        cta_caption=CTA_CAPTION,   # always the fixed brand copy, never AI-generated
         recipes=recipes,
     )
 

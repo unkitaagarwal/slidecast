@@ -161,21 +161,20 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
                     print(f"  [gemini-img] {attempt_model} busy (attempt {attempt+1}/3) — retrying in {wait}s")
                     time.sleep(wait)
                 else:
-                    if verbose or not _gemini_err_quiet(e):
-                        print(f"  [gemini-img] {attempt_model} → {str(e)[:80]}")
-                    break  # 404 / bad request → skip to next model
+                    # Always log Tier-1 failures so we're never blind to what's happening
+                    print(f"  [gemini-img] {attempt_model} skipped → {str(e)[:120]}")
+                    break  # non-retryable → skip to next model
 
     # ── Tier 2: Imagen via generate_images API ───────────────────────────────
-    # imagen-3.0-generate-002 is broadly available; imagen-4 requires higher tier
+    # imagen-3.0-generate-002 is on the standard API tier.
+    # imagen-4.0-fast-generate-001 requires a higher billing tier — skip it.
     _IMAGEN_MODELS = [
         "imagen-3.0-generate-002",
-        "imagen-4.0-fast-generate-001",
     ]
     for imagen_model in _IMAGEN_MODELS:
         try:
             from google.genai import types as _gtypes
-            if verbose:
-                print(f"  [gemini-img] trying Imagen ({imagen_model})")
+            print(f"  [gemini-img] trying Imagen ({imagen_model})")
             img_resp = client.models.generate_images(
                 model=imagen_model,
                 prompt=full_prompt,
@@ -187,8 +186,7 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
                 return raw
         except Exception as e:
             last_exc = e
-            if verbose or not _gemini_err_quiet(e):
-                print(f"  [gemini-img] Imagen {imagen_model} failed: {str(e)[:80]}")
+            print(f"  [gemini-img] Imagen {imagen_model} failed: {str(e)[:120]}")
 
     # ── Tier 3: OpenAI fallback (if key available) ───────────────────────────
     openai_key = os.environ.get("OPENAI_API_KEY")
