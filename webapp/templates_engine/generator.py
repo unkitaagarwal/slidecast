@@ -125,7 +125,9 @@ def generate_one(template_id: str, inputs: dict, brand: dict,
             return None
 
     raw_paths: dict[int, Optional[str]] = {}
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    default_workers = "2" if os.environ.get("RENDER") else "6"
+    image_workers = max(1, min(len(specs), int(os.environ.get("IMAGE_GEN_WORKERS", default_workers))))
+    with ThreadPoolExecutor(max_workers=image_workers) as pool:
         futures = {}
         for i, sp in enumerate(specs):
             prompt = sp.get("image_prompt", "")

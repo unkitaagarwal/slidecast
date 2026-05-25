@@ -118,14 +118,15 @@ def run_one_compilation(theme: str, progress_cb=None) -> str:
         tasks.append((f"hero{i}", r.hero_image_prompt, "hero"))
 
     # Hard wall-clock limit on the image generation phase.
-    # 6 images in parallel, each capped at ~90 s by the Gemini client timeout;
-    # allow 3 min total so even a slow provider has breathing room but a
-    # completely hung call cannot block the job forever.
+    # Render Standard has 1 CPU / 2 GB RAM, so avoid running all six image
+    # requests at once there. Locally we keep the old higher concurrency.
     _IMAGE_TIMEOUT = int(os.environ.get("IMAGE_GEN_TIMEOUT", "180"))
+    default_workers = "2" if os.environ.get("RENDER") else "6"
+    _IMAGE_WORKERS = max(1, min(len(tasks), int(os.environ.get("IMAGE_GEN_WORKERS", default_workers))))
 
-    _emit(f"Generating {len(tasks)} hero images with Nano Banana in parallel…")
+    _emit(f"Generating {len(tasks)} hero images with Nano Banana ({_IMAGE_WORKERS} at a time)…")
     _completed = 0
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    with ThreadPoolExecutor(max_workers=_IMAGE_WORKERS) as pool:
         futures = {pool.submit(_gen, n, p, st): n for n, p, st in tasks}
         # Poll completions so the UI sees a heartbeat per image, not just
         # one big silence between submit and wait().

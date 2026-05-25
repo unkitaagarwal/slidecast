@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import queue
 import random as _random
 import sys
 import threading
@@ -607,8 +608,75 @@ class JobStore:
             return {}
 
 
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        return max(minimum, int(os.environ.get(name, str(default))))
+    except ValueError:
+        return default
+
+
+class BackgroundJobQueue:
+    """Small bounded queue for expensive generation jobs.
+
+    This keeps FastAPI request handlers quick and prevents Render Standard
+    from running several CPU/memory-heavy generations at once.
+    """
+
+    def __init__(self, name: str, workers: int, max_queue_size: int):
+        self.name = name
+        self._queue: queue.Queue[tuple[str, Any, tuple, dict]] = queue.Queue(
+            maxsize=max_queue_size
+        )
+        self._workers = workers
+        for idx in range(workers):
+            t = threading.Thread(
+                target=self._run_forever,
+                name=f"{name}-worker-{idx + 1}",
+                daemon=True,
+            )
+            t.start()
+        print(f"  [{name}] started {workers} worker(s), queue size {max_queue_size}")
+
+    def submit(self, job_id: str, fn, *args, **kwargs) -> bool:
+        try:
+            self._queue.put_nowait((job_id, fn, args, kwargs))
+        except queue.Full:
+            msg = (
+                "Generation queue is full. Please wait for the current "
+                "generation to finish and try again."
+            )
+            JOBS.update(job_id, status="failed", message=f"Failed: {msg}", error=msg)
+            return False
+
+        ahead = self._queue.qsize() - 1
+        if ahead > 0:
+            JOBS.update(job_id, message=f"Queued for generation ({ahead} ahead)…")
+        else:
+            JOBS.update(job_id, message="Queued for generation…")
+        return True
+
+    def _run_forever(self) -> None:
+        while True:
+            job_id, fn, args, kwargs = self._queue.get()
+            try:
+                fn(*args, **kwargs)
+            except Exception as e:
+                traceback.print_exc()
+                JOBS.update(job_id, status="failed",
+                            message=f"Failed: {e}", error=str(e))
+            finally:
+                self._queue.task_done()
+
+
 JOBS = JobStore()
-EXECUTOR = ThreadPoolExecutor(max_workers=2)
+_DEFAULT_GENERATION_WORKERS = 1 if os.environ.get("RENDER") else 2
+_DEFAULT_GENERATION_QUEUE_SIZE = 4 if os.environ.get("RENDER") else 20
+GENERATION_QUEUE = BackgroundJobQueue(
+    "generation",
+    workers=_env_int("GENERATION_WORKERS", _DEFAULT_GENERATION_WORKERS),
+    max_queue_size=_env_int("GENERATION_QUEUE_SIZE", _DEFAULT_GENERATION_QUEUE_SIZE),
+)
+AUX_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
 
 # ---------------------------------------------------------------------------
@@ -939,10 +1007,14 @@ def api_generate(body: GenerateBody):
     user_email = (body.user_email or "").strip() or None
 
     if body.format == "single":
-        EXECUTOR.submit(_run_single, job_id, text, user_email)
+        queued = GENERATION_QUEUE.submit(job_id, _run_single, job_id, text, user_email)
     else:
-        EXECUTOR.submit(_run_compilation, job_id, text,
-                        brand_card_path, brand_name, user_email)
+        queued = GENERATION_QUEUE.submit(
+            job_id, _run_compilation, job_id, text,
+            brand_card_path, brand_name, user_email
+        )
+    if not queued:
+        raise HTTPException(429, "generation queue is full; try again shortly")
     return {"job_id": job_id}
 
 
@@ -1445,7 +1517,9 @@ def api_template_generate(body: TemplateBatchBody):
             JOBS.update(job_id, status="failed",
                         message=f"Failed: {e}", error=str(e))
 
-    EXECUTOR.submit(_run)
+    queued = GENERATION_QUEUE.submit(job_id, _run)
+    if not queued:
+        raise HTTPException(429, "generation queue is full; try again shortly")
     return {"job_id": job_id}
 
 
@@ -1667,7 +1741,7 @@ def tracking_refresh():
             traceback.print_exc()
             print(f"refresh failed: {e}")
 
-    EXECUTOR.submit(_run)
+    AUX_EXECUTOR.submit(_run)
     return {"started": True}
 
 

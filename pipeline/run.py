@@ -100,9 +100,11 @@ def run_one_recipe(brief: str, *, image_quality: str = "medium",
         return out_path
 
     total = len(recipe.slides)
-    _emit(f"Generating {total} slides (image + composite) in parallel…")
+    default_workers = "2" if os.environ.get("RENDER") else "4"
+    image_workers = max(1, min(total, int(os.environ.get("IMAGE_GEN_WORKERS", default_workers))))
+    _emit(f"Generating {total} slides (image + composite, {image_workers} at a time)…")
     done_count = 0
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=image_workers) as pool:
         futures = {pool.submit(_do_one, s): s for s in recipe.slides}
         for f in as_completed(futures):
             slide = futures[f]

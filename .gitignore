@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 .DS_Store
 .env
+.jobs/
 serviceaccount.json
 output/
 output_compilations/
