@@ -2709,8 +2709,12 @@ def _serve_html(filename: str) -> HTMLResponse:
     return HTMLResponse(html.replace("__BUILD_ID__", BUILD_ID))
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def index():
+    # HEAD support is important because Render's default health-check probes
+    # the root with HEAD; @app.get alone returns 405 and Render then SIGTERMs
+    # the worker as "unhealthy". Starlette serves a HEAD response by running
+    # this handler and discarding the body, which is exactly what we want.
     return _serve_html("index.html")
 
 
