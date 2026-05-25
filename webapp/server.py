@@ -475,9 +475,91 @@ def _import_caption():
 # ---------------------------------------------------------------------------
 
 class JobStore:
-    def __init__(self):
+    """Tracks in-flight + recently-finished generation jobs.
+
+    Backed by a small JSON file per job on disk so a worker OOM-kill /
+    restart on Render doesn't lose job state. On restart we reload existing
+    job files into memory; if the previous worker died with a job still
+    'running' the next poll sees a synthetic 'failed' status instead of a
+    404, so the UI can show a useful error instead of hanging.
+
+    Storage dir defaults to <repo>/.jobs/ and can be overridden with the
+    JOBS_DIR env var. Files older than JOBS_TTL_HOURS (default 24) are
+    pruned on startup.
+    """
+
+    def __init__(self, store_dir: Optional[str] = None):
         self._lock = threading.Lock()
         self._jobs: dict[str, dict] = {}
+        self._dir = store_dir or os.environ.get(
+            "JOBS_DIR", os.path.join(ROOT, ".jobs")
+        )
+        try:
+            os.makedirs(self._dir, exist_ok=True)
+            self._cleanup_and_load()
+        except Exception as e:
+            # Persistence is best-effort — fall back to pure in-memory if the
+            # filesystem is read-only or unwritable for any reason.
+            print(f"  [JOBS] persistence disabled: {e}")
+            self._dir = None
+
+    # ---- persistence helpers ----------------------------------------------
+
+    def _job_path(self, job_id: str) -> str:
+        return os.path.join(self._dir, f"{job_id}.json")
+
+    def _persist(self, job_id: str, job: dict) -> None:
+        if not self._dir:
+            return
+        try:
+            p = self._job_path(job_id)
+            tmp = p + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(job, f)
+            os.replace(tmp, p)  # atomic
+        except Exception as e:
+            # Don't let a disk hiccup break the job — just log it.
+            print(f"  [JOBS] persist failed for {job_id}: {e}")
+
+    def _cleanup_and_load(self) -> None:
+        """Prune stale job files, then load surviving ones into memory.
+
+        Any job that was still 'running' or 'pending' when the previous
+        process died is rewritten as 'failed' so the UI gets a clear error
+        instead of an indefinite 'running' state."""
+        ttl_hours = float(os.environ.get("JOBS_TTL_HOURS", "24"))
+        cutoff = time.time() - ttl_hours * 3600
+        loaded = 0
+        revived_as_failed = 0
+        for fn in os.listdir(self._dir):
+            if not fn.endswith(".json"):
+                continue
+            p = os.path.join(self._dir, fn)
+            try:
+                if os.path.getmtime(p) < cutoff:
+                    os.remove(p)
+                    continue
+                with open(p, "r", encoding="utf-8") as f:
+                    job = json.load(f)
+                if job.get("status") in ("pending", "running"):
+                    job["status"] = "failed"
+                    job["error"] = (
+                        "Worker restarted before job finished. The pipeline "
+                        "may still have produced output — check the library."
+                    )
+                    job["message"] = "Failed: worker restarted mid-job"
+                    job["updated_at"] = time.time()
+                    self._persist(job["id"], job)
+                    revived_as_failed += 1
+                self._jobs[job["id"]] = job
+                loaded += 1
+            except Exception as e:
+                print(f"  [JOBS] could not load {fn}: {e}")
+        if loaded:
+            print(f"  [JOBS] loaded {loaded} job(s) from {self._dir}"
+                  + (f" ({revived_as_failed} marked failed)" if revived_as_failed else ""))
+
+    # ---- public API -------------------------------------------------------
 
     def create(self, kind: str, payload: dict) -> str:
         job_id = str(uuid.uuid4())[:8]
@@ -493,6 +575,7 @@ class JobStore:
                 "created_at": time.time(),
                 "updated_at": time.time(),
             }
+            self._persist(job_id, self._jobs[job_id])
         return job_id
 
     def update(self, job_id: str, **kw):
@@ -502,10 +585,26 @@ class JobStore:
                 return
             j.update(kw)
             j["updated_at"] = time.time()
+            self._persist(job_id, j)
 
     def get(self, job_id: str) -> Optional[dict]:
         with self._lock:
-            return dict(self._jobs.get(job_id) or {})
+            j = self._jobs.get(job_id)
+            if j:
+                return dict(j)
+            # Fall back to disk in case another process wrote it (unlikely
+            # with single-worker uvicorn, but cheap insurance).
+            if self._dir:
+                p = self._job_path(job_id)
+                if os.path.exists(p):
+                    try:
+                        with open(p, "r", encoding="utf-8") as f:
+                            j = json.load(f)
+                        self._jobs[job_id] = j
+                        return dict(j)
+                    except Exception:
+                        return {}
+            return {}
 
 
 JOBS = JobStore()
@@ -1701,10 +1800,7 @@ def auth_tiktok_callback(code: str = "", state: str = "", error: str = "",
 @app.get("/scheduler")
 def scheduler_page():
     """Serve the Postiz Bulk Scheduler SPA."""
-    p = os.path.join(STATIC, "scheduler.html")
-    if not os.path.isfile(p):
-        raise HTTPException(404, "scheduler.html not found")
-    return FileResponse(p)
+    return _serve_html("scheduler.html")
 
 
 @app.get("/api/integrations")
@@ -2383,25 +2479,57 @@ async def api_upload_tiktok_video(request: Request):
         _shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# Cache-busting build ID
+# ---------------------------------------------------------------------------
+# HTML files contain "?v=__BUILD_ID__" against /static/*.{js,css} references.
+# At serve time we substitute __BUILD_ID__ with a short hash derived from the
+# latest mtime of files in the static folder. Render rebuilds the container
+# on every deploy (mtimes update), and local file saves bump the hash too —
+# so browsers never serve stale JS/CSS without us having to bump version
+# numbers by hand.
+def _compute_build_id() -> str:
+    try:
+        latest = 0.0
+        for fn in os.listdir(STATIC):
+            p = os.path.join(STATIC, fn)
+            if os.path.isfile(p) and fn.endswith((".js", ".css", ".html")):
+                latest = max(latest, os.path.getmtime(p))
+        if latest <= 0:
+            return "dev"
+        # 8 hex chars of a hash of the mtime — short, opaque, stable per deploy
+        import hashlib as _hashlib
+        return _hashlib.md5(str(int(latest)).encode()).hexdigest()[:8]
+    except Exception:
+        return "dev"
+
+
+BUILD_ID = _compute_build_id()
+
+
+def _serve_html(filename: str) -> HTMLResponse:
+    """Read an HTML file from STATIC, substitute __BUILD_ID__, return as HTML."""
+    p = os.path.join(STATIC, filename)
+    if not os.path.exists(p):
+        raise HTTPException(404, f"{filename} not found")
+    with open(p, "r", encoding="utf-8") as f:
+        html = f.read()
+    return HTMLResponse(html.replace("__BUILD_ID__", BUILD_ID))
+
+
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(STATIC, "index.html"))
+    return _serve_html("index.html")
 
 
 @app.get("/auth")
 def auth_page():
-    p = os.path.join(STATIC, "auth.html")
-    if not os.path.exists(p):
-        raise HTTPException(404, "auth.html not found")
-    return FileResponse(p)
+    return _serve_html("auth.html")
 
 
 @app.get("/pricing")
 def pricing_page():
-    p = os.path.join(STATIC, "pricing.html")
-    if not os.path.exists(p):
-        raise HTTPException(404, "pricing.html not found")
-    return FileResponse(p)
+    return _serve_html("pricing.html")
 
 
 # Static asset mount (CSS, JS, etc.)

@@ -234,7 +234,17 @@ def generate_compilation(theme: str, model: Optional[str] = None) -> Compilation
         )
         for r in data["recipes"]
     ]
-    assert len(recipes) == 5, f"expected 5 recipes, got {len(recipes)}"
+    # Gemini occasionally returns 4 or 6+ despite the prompt asking for exactly 5.
+    # The downstream compositor hardcodes recipes[0..4], so we need exactly 5.
+    # If too few → real failure (can't fake recipes). If too many → trim the tail.
+    if len(recipes) < 5:
+        raise ValueError(
+            f"Gemini returned only {len(recipes)} recipes for theme "
+            f"{theme!r}; need at least 5. Retry the generation."
+        )
+    if len(recipes) > 5:
+        print(f"  [recipes] Gemini returned {len(recipes)}; trimming to 5")
+        recipes = recipes[:5]
 
     return Compilation(
         slug=_slugify(data.get("slug") or theme),

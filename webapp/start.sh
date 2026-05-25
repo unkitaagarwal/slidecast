@@ -4,9 +4,13 @@ set -e
 cd "$(dirname "$0")"
 
 PYTHON="${PYTHON:-python3}"
-PKGS="fastapi uvicorn python-multipart google-genai openai requests Pillow"
+# Single source of truth: install whatever's in requirements.txt.
+# Previously this script kept its own hand-maintained PKGS list, which
+# drifted (firebase-admin, stripe, etc. were missing) and produced silent
+# "module not found" failures at runtime. Don't do that again.
+REQS="$(dirname "$0")/requirements.txt"
 
-echo "Installing webapp dependencies (fastapi, uvicorn, ...) ..."
+echo "Installing webapp dependencies from $REQS ..."
 
 # Try a sequence of pip install variants — different macOS / Linux Python
 # installs need different flags. Use the first one that works.
@@ -17,7 +21,7 @@ for flags in \
     "--break-system-packages" \
     "--user --break-system-packages"
 do
-    if $PYTHON -m pip install --quiet $flags $PKGS 2>/dev/null; then
+    if $PYTHON -m pip install --quiet $flags -r "$REQS" 2>/dev/null; then
         echo "  -> installed with flags: '${flags:-default}'"
         install_ok=1
         break
@@ -31,7 +35,7 @@ if [ "$install_ok" -ne 1 ]; then
     # shellcheck disable=SC1091
     source .venv/bin/activate
     pip install --quiet --upgrade pip
-    pip install --quiet $PKGS
+    pip install --quiet -r "$REQS"
     PYTHON=".venv/bin/python3"
 fi
 
