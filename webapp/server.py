@@ -720,6 +720,7 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
             theme          = brief,
             slide_filenames= slides,
             caption        = caption,
+            progress_cb    = lambda msg: JOBS.update(job_id, message=msg),
         )
 
         # Clean up local output dir — slides are in Firebase, no need to keep them on disk
@@ -789,6 +790,7 @@ def _run_compilation(job_id: str, theme: str,
             theme          = theme,
             slide_filenames= slides,
             caption        = caption,
+            progress_cb    = lambda msg: JOBS.update(job_id, message=msg),
         )
 
         # Clean up local output dir — slides are in Firebase, no need to keep them on disk
@@ -920,6 +922,7 @@ def _upload_slides_and_log(
     theme: str,
     slide_filenames: list,
     caption: str = "",
+    progress_cb=None,
 ) -> list:
     """Upload all slide PNGs from slides_dir to Firebase Storage and write a
     generation record to Firestore under users/{email}/generations/{slug}.
@@ -940,7 +943,10 @@ def _upload_slides_and_log(
         bucket = _fa_storage.bucket()
         slide_urls = []
 
-        for fname in slide_filenames:
+        total = len(slide_filenames)
+        for idx, fname in enumerate(slide_filenames, 1):
+            if progress_cb:
+                progress_cb(f"Uploading slide {idx}/{total} to Firebase…")
             local_path   = os.path.join(slides_dir, fname)
             storage_path = f"carousels/{format_name}/{slug}/slides/{fname}"
             blob = bucket.blob(storage_path)
@@ -951,6 +957,8 @@ def _upload_slides_and_log(
 
         # Save caption.txt to Firebase Storage so preview works after local cleanup
         if caption:
+            if progress_cb:
+                progress_cb("Uploading caption to Firebase…")
             cap_blob = bucket.blob(f"carousels/{format_name}/{slug}/caption.txt")
             cap_blob.upload_from_string(caption, content_type="text/plain; charset=utf-8")
             cap_blob.make_public()

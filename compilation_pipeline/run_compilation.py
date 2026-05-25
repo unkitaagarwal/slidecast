@@ -152,36 +152,41 @@ def run_one_compilation(theme: str, progress_cb=None) -> str:
     # ---- Step 2: composite 12 slides ----
     print("  compositing slides...")
     _emit("Compositing 12 slides (hook + 5 recipes × 2 + CTA)…")
-    composite_hook(raw_paths["hook"], comp.hook_caption,
-                   os.path.join(slides_dir, "01_hook.png"))
+
+    def _compose(label, fn, *args):
+        fn(*args)
+        _emit(f"Composited {label}")
+
+    _compose("1/12 hook", composite_hook, raw_paths["hook"], comp.hook_caption,
+             os.path.join(slides_dir, "01_hook.png"))
 
     # Recipes 1 & 2 (photo + page)
-    composite_photo(raw_paths["hero1"], comp.recipes[0].title,
-                    os.path.join(slides_dir, "02_recipe1_photo.png"))
-    composite_recipe_page(comp.recipes[0].__dict__,
-                          os.path.join(slides_dir, "03_recipe1_page.png"))
-    composite_photo(raw_paths["hero2"], comp.recipes[1].title,
-                    os.path.join(slides_dir, "04_recipe2_photo.png"))
-    composite_recipe_page(comp.recipes[1].__dict__,
-                          os.path.join(slides_dir, "05_recipe2_page.png"))
+    _compose("2/12 recipe 1 photo", composite_photo, raw_paths["hero1"], comp.recipes[0].title,
+             os.path.join(slides_dir, "02_recipe1_photo.png"))
+    _compose("3/12 recipe 1 page", composite_recipe_page, comp.recipes[0].__dict__,
+             os.path.join(slides_dir, "03_recipe1_page.png"))
+    _compose("4/12 recipe 2 photo", composite_photo, raw_paths["hero2"], comp.recipes[1].title,
+             os.path.join(slides_dir, "04_recipe2_photo.png"))
+    _compose("5/12 recipe 2 page", composite_recipe_page, comp.recipes[1].__dict__,
+             os.path.join(slides_dir, "05_recipe2_page.png"))
 
     # Mid-carousel CTA
-    composite_cta(comp.cta_caption,
-                  os.path.join(slides_dir, "06_cta.png"))
+    _compose("6/12 CTA", composite_cta, comp.cta_caption,
+             os.path.join(slides_dir, "06_cta.png"))
 
     # Recipes 3, 4, 5
-    composite_photo(raw_paths["hero3"], comp.recipes[2].title,
-                    os.path.join(slides_dir, "07_recipe3_photo.png"))
-    composite_recipe_page(comp.recipes[2].__dict__,
-                          os.path.join(slides_dir, "08_recipe3_page.png"))
-    composite_photo(raw_paths["hero4"], comp.recipes[3].title,
-                    os.path.join(slides_dir, "09_recipe4_photo.png"))
-    composite_recipe_page(comp.recipes[3].__dict__,
-                          os.path.join(slides_dir, "10_recipe4_page.png"))
-    composite_photo(raw_paths["hero5"], comp.recipes[4].title,
-                    os.path.join(slides_dir, "11_recipe5_photo.png"))
-    composite_recipe_page(comp.recipes[4].__dict__,
-                          os.path.join(slides_dir, "12_recipe5_page.png"))
+    _compose("7/12 recipe 3 photo", composite_photo, raw_paths["hero3"], comp.recipes[2].title,
+             os.path.join(slides_dir, "07_recipe3_photo.png"))
+    _compose("8/12 recipe 3 page", composite_recipe_page, comp.recipes[2].__dict__,
+             os.path.join(slides_dir, "08_recipe3_page.png"))
+    _compose("9/12 recipe 4 photo", composite_photo, raw_paths["hero4"], comp.recipes[3].title,
+             os.path.join(slides_dir, "09_recipe4_photo.png"))
+    _compose("10/12 recipe 4 page", composite_recipe_page, comp.recipes[3].__dict__,
+             os.path.join(slides_dir, "10_recipe4_page.png"))
+    _compose("11/12 recipe 5 photo", composite_photo, raw_paths["hero5"], comp.recipes[4].title,
+             os.path.join(slides_dir, "11_recipe5_photo.png"))
+    _compose("12/12 recipe 5 page", composite_recipe_page, comp.recipes[4].__dict__,
+             os.path.join(slides_dir, "12_recipe5_page.png"))
 
     print(f"  DONE -> {cdir}")
     return cdir

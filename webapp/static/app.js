@@ -148,8 +148,9 @@
       progress = Math.min(progress + 3, 92);
       jobBar.style.width = `${progress}%`;
 
-      // Cycle through stage messages so the UI feels lively
-      if (Math.random() < 0.45 && stageIdx < messages.length) {
+      // Cycle through stage messages only until the server gives us a real
+      // status. After that, keep the UI grounded in backend state.
+      if (!lastServerMsg && Math.random() < 0.45 && stageIdx < messages.length) {
         jobMsg.textContent = messages[stageIdx];
         stageIdx += 1;
       }
@@ -167,9 +168,10 @@
         if (j.message && j.message !== lastServerMsg) {
           lastServerMsg = j.message;
           lastActivity = Date.now();
-          // Prefer the server's live message over our rotating placeholder
-          jobMsg.textContent = j.message;
         }
+        // Always prefer the server's live message over rotating placeholders.
+        if (j.message) jobMsg.textContent = j.message;
+        jobTitle.textContent = j.status === 'pending' ? 'Queued' : 'Working';
 
         if (j.status === 'done') {
           jobBar.style.width = '100%';
