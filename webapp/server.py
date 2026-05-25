@@ -520,7 +520,13 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
     try:
         JOBS.update(job_id, status="running", message="Generating recipe with Gemini…")
         single = _import_single()
-        rdir   = single.run_one_recipe(brief)
+
+        # Stream phase-by-phase progress into the job record so the UI's
+        # idle-timeout reset has real heartbeats to work with.
+        def _on_progress(msg: str) -> None:
+            JOBS.update(job_id, message=msg)
+
+        rdir   = single.run_one_recipe(brief, progress_cb=_on_progress)
         slug   = os.path.basename(rdir)
         slides = sorted(
             f for f in os.listdir(os.path.join(rdir, "slides"))
@@ -582,7 +588,14 @@ def _run_compilation(job_id: str, theme: str,
         JOBS.update(job_id, status="running",
                     message="Generating 5 recipes with Gemini…")
         comp = _import_compilation()
-        cdir = comp.run_one_compilation(theme)
+
+        # Stream phase-by-phase progress from the pipeline into the job record
+        # so the UI's poller (and its idle-timeout reset) sees real heartbeats
+        # instead of one silent ~8-minute block.
+        def _on_progress(msg: str) -> None:
+            JOBS.update(job_id, message=msg)
+
+        cdir = comp.run_one_compilation(theme, progress_cb=_on_progress)
         slug = os.path.basename(cdir)
         slides = sorted(
             f for f in os.listdir(os.path.join(cdir, "slides"))

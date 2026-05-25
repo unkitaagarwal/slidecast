@@ -132,7 +132,13 @@
   }
 
   async function pollJob(jobId) {
-    const startTime = Date.now();
+    // Format-aware wall-clock cap. Compilation = 5 recipes + 6 images + 12 slides
+    // and routinely runs 8-12 min on Render; single is much quicker.
+    // The cap also RESETS whenever the server's message field changes, so as
+    // long as the pipeline is making forward progress we won't time out.
+    const MAX_IDLE_MS = selectedFmt === 'compilation' ? 15 * 60 * 1000 : 8 * 60 * 1000;
+    let lastActivity = Date.now();
+    let lastServerMsg = '';
     let progress = 8;
     let stageIdx = 0;
     const messages = selectedFmt === 'compilation' ? STAGE_MESSAGES_COMP : STAGE_MESSAGES_SINGLE;
@@ -156,8 +162,12 @@
           break;
         }
         const j = await res.json();
-        // Use server's message if it's more specific
-        if (j.message && (j.message.includes('Generating') || j.message.includes('Done'))) {
+        // Any change in the server message counts as forward progress —
+        // reset the idle timer so a slow-but-working pipeline isn't killed.
+        if (j.message && j.message !== lastServerMsg) {
+          lastServerMsg = j.message;
+          lastActivity = Date.now();
+          // Prefer the server's live message over our rotating placeholder
           jobMsg.textContent = j.message;
         }
 
@@ -184,9 +194,10 @@
         jobMsg.textContent = `Error: ${e}`;
       }
 
-      if (Date.now() - startTime > 5 * 60 * 1000) {
+      if (Date.now() - lastActivity > MAX_IDLE_MS) {
+        const mins = Math.round(MAX_IDLE_MS / 60000);
         jobTitle.textContent = 'Timed out';
-        jobMsg.textContent = 'Generation took longer than 5 minutes — check terminal logs';
+        jobMsg.textContent = `No progress for ${mins} minutes — check terminal logs (job may still be running on the server)`;
         break;
       }
     }
@@ -767,7 +778,11 @@
   }
 
   async function pollTplJob(jobId, expectedCount) {
-    const t0 = Date.now();
+    // Template-batch jobs run N compilations back-to-back. Cap is per-IDLE,
+    // not per-job: as long as the server message changes we keep polling.
+    const MAX_IDLE_MS = 20 * 60 * 1000;
+    let lastActivity = Date.now();
+    let lastMsg = '';
     let progress = 8;
     while (true) {
       await new Promise((res) => setTimeout(res, 2000));
@@ -777,7 +792,12 @@
         const r = await fetch(`/api/jobs/${jobId}`);
         if (!r.ok) break;
         const j = await r.json();
-        $('#tpl-job-msg').textContent = j.message || j.status;
+        const newMsg = j.message || j.status;
+        if (newMsg !== lastMsg) {
+          lastMsg = newMsg;
+          lastActivity = Date.now();
+        }
+        $('#tpl-job-msg').textContent = newMsg;
         if (j.status === 'done') {
           $('#tpl-job-bar').style.width = '100%';
           $('#tpl-job-title').textContent = 'Ready';
@@ -789,8 +809,10 @@
           break;
         }
       } catch (e) { console.warn(e); }
-      if (Date.now() - t0 > 15 * 60 * 1000) {
+      if (Date.now() - lastActivity > MAX_IDLE_MS) {
+        const mins = Math.round(MAX_IDLE_MS / 60000);
         $('#tpl-job-title').textContent = 'Timed out';
+        $('#tpl-job-msg').textContent = `No progress for ${mins} minutes — check terminal logs`;
         break;
       }
     }

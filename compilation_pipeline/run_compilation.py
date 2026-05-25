@@ -69,12 +69,30 @@ from compositor_compilation import (  # noqa: E402
 )
 
 
-def run_one_compilation(theme: str) -> str:
+def run_one_compilation(theme: str, progress_cb=None) -> str:
+    """Generate one compilation carousel.
+
+    progress_cb: optional callable(message:str) called at each phase boundary
+                 so a long-running job can report intermediate status to a UI.
+                 Safe to omit (CLI path) — failures inside the callback are
+                 swallowed so a bad UI integration can never break the pipeline.
+    """
+    def _emit(msg: str) -> None:
+        if progress_cb is None:
+            return
+        try:
+            progress_cb(msg)
+        except Exception as _e:
+            # Never let a UI callback crash the pipeline
+            print(f"  [progress_cb] swallowed: {_e}")
+
     print(f"\n=== {theme} ===")
+    _emit("Drafting 5 recipes with Gemini (this can take 1-2 min)…")
     comp = generate_compilation(theme)
     print(f"  -> {comp.slug}")
     print(f"  -> hook: {comp.hook_caption}")
     print(f"  -> recipes: {[r.title for r in comp.recipes]}")
+    _emit(f"Got {len(comp.recipes)} recipes: {comp.slug}")
 
     cdir = os.path.join(OUTPUT_ROOT, comp.slug)
     raw_dir = os.path.join(cdir, "raw")
@@ -105,23 +123,34 @@ def run_one_compilation(theme: str) -> str:
     # completely hung call cannot block the job forever.
     _IMAGE_TIMEOUT = int(os.environ.get("IMAGE_GEN_TIMEOUT", "180"))
 
+    _emit(f"Generating {len(tasks)} hero images with Nano Banana in parallel…")
+    _completed = 0
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {pool.submit(_gen, n, p, st): n for n, p, st in tasks}
-        done, not_done = _futures_wait(futures, timeout=_IMAGE_TIMEOUT)
-        for f in not_done:
-            n = futures[f]
-            f.cancel()
-            print(f"  RAW TIMEOUT {n}: image took >{_IMAGE_TIMEOUT}s — skipping")
-        for f in done:
-            n = futures[f]
-            try:
-                f.result()
-                print(f"  raw: {n}")
-            except Exception as e:
-                print(f"  RAW FAIL {n}: {e}")
+        # Poll completions so the UI sees a heartbeat per image, not just
+        # one big silence between submit and wait().
+        from concurrent.futures import as_completed as _as_completed
+        try:
+            for f in _as_completed(futures, timeout=_IMAGE_TIMEOUT):
+                n = futures[f]
+                _completed += 1
+                try:
+                    f.result()
+                    print(f"  raw: {n}")
+                    _emit(f"Image {_completed}/{len(tasks)} ready ({n})")
+                except Exception as e:
+                    print(f"  RAW FAIL {n}: {e}")
+                    _emit(f"Image {_completed}/{len(tasks)} failed ({n}): {e}")
+        except TimeoutError:
+            for f, n in futures.items():
+                if not f.done():
+                    f.cancel()
+                    print(f"  RAW TIMEOUT {n}: image took >{_IMAGE_TIMEOUT}s — skipping")
+            _emit(f"Hit image-gen timeout ({_IMAGE_TIMEOUT}s) — proceeding with partial set")
 
     # ---- Step 2: composite 12 slides ----
     print("  compositing slides...")
+    _emit("Compositing 12 slides (hook + 5 recipes × 2 + CTA)…")
     composite_hook(raw_paths["hook"], comp.hook_caption,
                    os.path.join(slides_dir, "01_hook.png"))
 

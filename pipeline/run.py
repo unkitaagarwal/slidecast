@@ -51,10 +51,26 @@ SAMPLE_BRIEFS = [
 OUTPUT_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
 
 
-def run_one_recipe(brief: str, *, image_quality: str = "medium") -> str:
+def run_one_recipe(brief: str, *, image_quality: str = "medium",
+                   progress_cb=None) -> str:
+    """Generate one single-recipe carousel.
+
+    progress_cb: optional callable(message:str) for streaming phase updates
+                 to a UI poller. Failures inside the callback are swallowed.
+    """
+    def _emit(msg: str) -> None:
+        if progress_cb is None:
+            return
+        try:
+            progress_cb(msg)
+        except Exception as _e:
+            print(f"  [progress_cb] swallowed: {_e}")
+
     print(f"\n=== {brief} ===")
+    _emit("Drafting recipe + slide plan with Gemini…")
     recipe = generate_recipe(brief)
     print(f"  -> {recipe.slug}: {recipe.title}")
+    _emit(f"Got recipe spec: {recipe.title}")
 
     rdir = os.path.join(OUTPUT_ROOT, recipe.slug)
     raw_dir = os.path.join(rdir, "raw")
@@ -83,15 +99,21 @@ def run_one_recipe(brief: str, *, image_quality: str = "medium") -> str:
         )
         return out_path
 
+    total = len(recipe.slides)
+    _emit(f"Generating {total} slides (image + composite) in parallel…")
+    done_count = 0
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(_do_one, s): s for s in recipe.slides}
         for f in as_completed(futures):
             slide = futures[f]
+            done_count += 1
             try:
                 p = f.result()
                 print(f"  [{slide.index:02d}] {slide.caption}  -> {os.path.basename(p)}")
+                _emit(f"Slide {done_count}/{total} done — {slide.caption}")
             except Exception as e:  # noqa: BLE001
                 print(f"  [{slide.index:02d}] FAILED: {e}")
+                _emit(f"Slide {done_count}/{total} failed: {e}")
     return rdir
 
 

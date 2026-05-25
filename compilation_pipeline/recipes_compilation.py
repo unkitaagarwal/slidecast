@@ -22,6 +22,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field, asdict
+from typing import Optional
 
 # Fixed CTA copy — same on every single slideshow, never AI-generated
 CTA_CAPTION: list[str] = [
@@ -198,9 +199,24 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
     raise RuntimeError(f"All Gemini models failed. Last error: {last_exc}")
 
 
-def generate_compilation(theme: str, model: str = "gemini-2.5-flash") -> Compilation:
+_DEFAULT_COMPILATION_MODEL = os.environ.get(
+    "GEMINI_COMPILATION_MODEL", "gemini-2.5-flash"
+)
+
+
+def generate_compilation(theme: str, model: Optional[str] = None) -> Compilation:
     """Generate a 5-recipe compilation. Uses Gemini text model (same key as
-    Nano Banana) so we don't depend on OpenAI quota."""
+    Nano Banana) so we don't depend on OpenAI quota.
+
+    The default model is gemini-2.5-flash (a thinking model — high quality
+    but 90-150 s on Render). Override with the GEMINI_COMPILATION_MODEL env
+    var to use a faster non-thinking model, e.g.:
+        export GEMINI_COMPILATION_MODEL=gemini-2.0-flash
+    Typical wall-clock savings: 2-3× on the recipe-drafting phase. The
+    existing fallback chain (1.5-flash, 2.0-flash) still kicks in on 503/timeout.
+    """
+    if model is None:
+        model = _DEFAULT_COMPILATION_MODEL
     data = _call_gemini_json(
         model=model,
         system_prompt=SYSTEM_PROMPT,
