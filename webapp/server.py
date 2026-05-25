@@ -628,6 +628,11 @@ class BackgroundJobQueue:
             maxsize=max_queue_size
         )
         self._workers = workers
+        self._threads: list[threading.Thread] = []
+        # Map worker thread ident -> currently executing job_id (or None if idle).
+        # Lets /api/admin/health show what each worker is actually working on.
+        self._active: dict[int, Optional[str]] = {}
+        self._active_lock = threading.Lock()
         for idx in range(workers):
             t = threading.Thread(
                 target=self._run_forever,
@@ -635,6 +640,7 @@ class BackgroundJobQueue:
                 daemon=True,
             )
             t.start()
+            self._threads.append(t)
         print(f"  [{name}] started {workers} worker(s), queue size {max_queue_size}")
 
     def submit(self, job_id: str, fn, *args, **kwargs) -> bool:
@@ -656,8 +662,13 @@ class BackgroundJobQueue:
         return True
 
     def _run_forever(self) -> None:
+        tid = threading.get_ident()
+        with self._active_lock:
+            self._active[tid] = None
         while True:
             job_id, fn, args, kwargs = self._queue.get()
+            with self._active_lock:
+                self._active[tid] = job_id
             try:
                 fn(*args, **kwargs)
             except Exception as e:
@@ -665,7 +676,38 @@ class BackgroundJobQueue:
                 JOBS.update(job_id, status="failed",
                             message=f"Failed: {e}", error=str(e))
             finally:
+                with self._active_lock:
+                    self._active[tid] = None
                 self._queue.task_done()
+
+    # ---- diagnostics ------------------------------------------------------
+
+    def health(self) -> dict:
+        """Snapshot of queue + worker state for the /api/admin/health endpoint."""
+        import sys as _sys
+        import traceback as _tb
+        threads_info = []
+        for t in self._threads:
+            tid = t.ident
+            active_job = None
+            with self._active_lock:
+                active_job = self._active.get(tid)
+            frame = _sys._current_frames().get(tid) if tid else None
+            stack = _tb.format_stack(frame)[-6:] if frame else ["<no frame captured>"]
+            threads_info.append({
+                "name": t.name,
+                "alive": t.is_alive(),
+                "active_job": active_job,
+                "stack_tail": [line.rstrip() for line in stack],
+            })
+        return {
+            "name": self.name,
+            "queue_depth": self._queue.qsize(),
+            "queue_max": self._queue.maxsize,
+            "worker_count": self._workers,
+            "workers_alive": sum(1 for t in self._threads if t.is_alive()),
+            "threads": threads_info,
+        }
 
 
 JOBS = JobStore()
@@ -1039,6 +1081,46 @@ def api_job(job_id: str):
         "message": j["message"],
         "result": j["result"],
         "error": j["error"],
+    }
+
+
+@app.get("/api/admin/health")
+def api_admin_health():
+    """Diagnostic snapshot for debugging stuck-worker / queue issues.
+
+    Open this in a browser when a job is wedged at 'pending' — it tells you
+    whether the worker thread is alive and, if so, the last few stack frames
+    of what it's currently doing. No auth: this only exposes process state,
+    no user data.
+    """
+    # Recent jobs from in-memory store, newest first, capped
+    with JOBS._lock:
+        recent = sorted(
+            JOBS._jobs.values(),
+            key=lambda j: j.get("updated_at", 0),
+            reverse=True,
+        )[:10]
+    jobs_summary = [
+        {
+            "id":         j.get("id"),
+            "kind":       j.get("kind"),
+            "status":     j.get("status"),
+            "message":    j.get("message"),
+            "updated_at": j.get("updated_at"),
+        }
+        for j in recent
+    ]
+    pending = sum(1 for j in JOBS._jobs.values() if j.get("status") == "pending")
+    running = sum(1 for j in JOBS._jobs.values() if j.get("status") == "running")
+
+    return {
+        "build_id":      BUILD_ID,
+        "jobs_dir":      JOBS._dir,
+        "jobs_pending":  pending,
+        "jobs_running":  running,
+        "generation":    GENERATION_QUEUE.health(),
+        "recent_jobs":   jobs_summary,
+        "env_render":    bool(os.environ.get("RENDER")),
     }
 
 
