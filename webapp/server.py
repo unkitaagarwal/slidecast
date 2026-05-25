@@ -633,6 +633,10 @@ class BackgroundJobQueue:
         # Lets /api/admin/health show what each worker is actually working on.
         self._active: dict[int, Optional[str]] = {}
         self._active_lock = threading.Lock()
+        # If a worker dies, record the cause keyed by thread name so it's
+        # visible in /api/admin/health. Dead threads have no stack frame, so
+        # without this we'd have no way to see WHY they died.
+        self._death_reasons: dict[str, str] = {}
         for idx in range(workers):
             t = threading.Thread(
                 target=self._run_forever,
@@ -662,23 +666,34 @@ class BackgroundJobQueue:
         return True
 
     def _run_forever(self) -> None:
-        tid = threading.get_ident()
-        with self._active_lock:
-            self._active[tid] = None
-        while True:
-            job_id, fn, args, kwargs = self._queue.get()
+        thread_name = threading.current_thread().name
+        try:
+            tid = threading.get_ident()
+            print(f"  [{self.name}] worker {thread_name} entered _run_forever (tid={tid})")
             with self._active_lock:
-                self._active[tid] = job_id
-            try:
-                fn(*args, **kwargs)
-            except Exception as e:
-                traceback.print_exc()
-                JOBS.update(job_id, status="failed",
-                            message=f"Failed: {e}", error=str(e))
-            finally:
+                self._active[tid] = None
+            while True:
+                job_id, fn, args, kwargs = self._queue.get()
                 with self._active_lock:
-                    self._active[tid] = None
-                self._queue.task_done()
+                    self._active[tid] = job_id
+                try:
+                    fn(*args, **kwargs)
+                except Exception as e:
+                    traceback.print_exc()
+                    JOBS.update(job_id, status="failed",
+                                message=f"Failed: {e}", error=str(e))
+                finally:
+                    with self._active_lock:
+                        self._active[tid] = None
+                    self._queue.task_done()
+        except BaseException as e:
+            # If we reach here the worker is about to die. BaseException catches
+            # SystemExit and KeyboardInterrupt too — anything that would
+            # otherwise kill the thread silently. Record it for /api/admin/health.
+            reason = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            self._death_reasons[thread_name] = reason
+            print(f"  [{self.name}] WORKER {thread_name} DIED:\n{reason}")
+            raise
 
     # ---- diagnostics ------------------------------------------------------
 
@@ -689,16 +704,29 @@ class BackgroundJobQueue:
         threads_info = []
         for t in self._threads:
             tid = t.ident
-            active_job = None
-            with self._active_lock:
-                active_job = self._active.get(tid)
-            frame = _sys._current_frames().get(tid) if tid else None
-            stack = _tb.format_stack(frame)[-6:] if frame else ["<no frame captured>"]
+            alive = t.is_alive()
+            # Only trust _current_frames() for LIVE threads. A dead thread's
+            # ident may be reused by another live thread, which would give us
+            # a totally unrelated stack and mislead debugging.
+            if alive and tid:
+                with self._active_lock:
+                    active_job = self._active.get(tid)
+                frame = _sys._current_frames().get(tid)
+                stack = (
+                    [line.rstrip() for line in _tb.format_stack(frame)[-6:]]
+                    if frame else ["<no frame captured>"]
+                )
+            else:
+                active_job = None
+                stack = ["<thread is not alive>"]
             threads_info.append({
                 "name": t.name,
-                "alive": t.is_alive(),
+                "alive": alive,
                 "active_job": active_job,
-                "stack_tail": [line.rstrip() for line in stack],
+                "stack_tail": stack,
+                # Populated by _run_forever's BaseException handler if the
+                # worker died — the smoking gun for stuck-queue debugging.
+                "death_reason": self._death_reasons.get(t.name),
             })
         return {
             "name": self.name,
