@@ -29,13 +29,32 @@
   let currentResult = null;
   let allItems = [];
 
-  // ---------- Format selector ----------
-  $$('.fmt-card').forEach((card) => {
-    card.addEventListener('click', () => {
-      $$('.fmt-card').forEach((c) => c.classList.remove('selected'));
-      card.classList.add('selected');
-      selectedFmt = card.dataset.fmt;
+  // ---------- Prompt dialog wiring ----------
+  // Format selector lives in two places: the rich cards (.fmt-card) above and
+  // the compact dropdown (#prompt-format) inside the new dialog. Both write to
+  // `selectedFmt` and both stay visually in sync via setFormat().
+  const formatSelectEl = $('#prompt-format');
+  const promptClearBtn = $('#prompt-clear');
+  const promptCharEl   = $('#prompt-char');
+
+  function setFormat(fmt) {
+    if (!fmt) return;
+    selectedFmt = fmt;
+    $$('.fmt-card').forEach((c) => {
+      c.classList.toggle('selected', c.dataset.fmt === fmt);
     });
+    if (formatSelectEl && formatSelectEl.value !== fmt) {
+      formatSelectEl.value = fmt;
+    }
+  }
+
+  // Initialise dropdown to match whichever card is .selected in markup
+  const initialCard = document.querySelector('.fmt-card.selected');
+  if (initialCard) setFormat(initialCard.dataset.fmt);
+
+  // Format cards (rich) drive setFormat
+  $$('.fmt-card').forEach((card) => {
+    card.addEventListener('click', () => setFormat(card.dataset.fmt));
     // Magnetic glow effect
     card.addEventListener('mousemove', (e) => {
       const rect = card.getBoundingClientRect();
@@ -44,25 +63,50 @@
     });
   });
 
+  // Dropdown (compact) also drives setFormat
+  if (formatSelectEl) {
+    formatSelectEl.addEventListener('change', (e) => setFormat(e.target.value));
+  }
+
+  // Character counter — updates live, capped by maxlength on the element
+  function updateCharCount() {
+    if (!promptCharEl) return;
+    promptCharEl.textContent = String((promptEl.value || '').length);
+  }
+  if (promptEl) {
+    promptEl.addEventListener('input', updateCharCount);
+    updateCharCount();
+  }
+
+  // Clear prompt button — empties the textarea and refocuses
+  if (promptClearBtn) {
+    promptClearBtn.addEventListener('click', () => {
+      promptEl.value = '';
+      updateCharCount();
+      promptEl.focus();
+    });
+  }
+
   // ---------- Example chips ----------
   $$('.chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       promptEl.value = chip.dataset.chip;
+      updateCharCount();
       const fmt = chip.dataset.fmt;
-      if (fmt) {
-        selectedFmt = fmt;
-        $$('.fmt-card').forEach((c) => {
-          c.classList.toggle('selected', c.dataset.fmt === fmt);
-        });
-      }
+      if (fmt) setFormat(fmt);
       promptEl.focus();
     });
   });
 
   // ---------- Generate ----------
   generateBtn.addEventListener('click', startGeneration);
+  // Textarea-friendly Enter behaviour: bare Enter inserts a newline (default),
+  // Cmd/Ctrl+Enter submits. Matches what people expect from chat-style boxes.
   promptEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') startGeneration();
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      startGeneration();
+    }
   });
 
   // Smarter status messages — rotate as job runs
@@ -1023,9 +1067,15 @@
   // ---------- Initial load ----------
   applyBranding();
   refreshLibrary();
-  loadTrackingStatus();
-  loadTrackingSummary();
-  loadTemplates();
-  loadBatches();
-  bindBuilder();
+  // Tracking section ("Daily impressions" + Leaderboard + Top posts) and the
+  // Templates / Past Batches sections were removed from index.html. The
+  // associated initializers below are commented out to avoid pointless
+  // /api/tracking/* and /api/templates/* requests on every page load. The
+  // function definitions themselves stay as dead code (their element lookups
+  // would return null and noop) in case the sections are reintroduced.
+  // loadTrackingStatus();
+  // loadTrackingSummary();
+  // loadTemplates();
+  // loadBatches();
+  // bindBuilder();
 })();
