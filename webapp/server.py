@@ -895,6 +895,11 @@ def _run_compilation(job_id: str, theme: str,
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+# run_in_threadpool runs a blocking call in FastAPI's worker threadpool so the
+# async event loop stays responsive. Critical for any handler that calls the
+# synchronous urllib-based _postiz_proxy_post; without this, a single slow
+# upload blocks every other request and causes ClientDisconnect cascades.
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 app = FastAPI(title="Slidecast Studio")
@@ -2058,7 +2063,8 @@ async def api_upload(request: Request):
     auth = request.headers.get("Authorization", "")
     ct   = request.headers.get("Content-Type", "application/json")
     body = await request.body()
-    result = _postiz_proxy_post("/upload", auth, body, ct)
+    # Sync urllib call → run off the event loop so other uploads can progress
+    result = await run_in_threadpool(_postiz_proxy_post, "/upload", auth, body, ct)
     del body
     return result
 
@@ -2069,7 +2075,7 @@ async def api_posts(request: Request):
     auth = request.headers.get("Authorization", "")
     ct   = request.headers.get("Content-Type", "application/json")
     body = await request.body()
-    return _postiz_proxy_post("/posts", auth, body, ct)
+    return await run_in_threadpool(_postiz_proxy_post, "/posts", auth, body, ct)
 
 
 @app.post("/api/upload-from-path")
@@ -2098,7 +2104,8 @@ async def api_upload_from_path(request: Request):
         file_data = fh.read()
     body = part_head + file_data + part_tail
     del file_data  # free before HTTP call
-    result = _postiz_proxy_post(
+    result = await run_in_threadpool(
+        _postiz_proxy_post,
         "/upload", auth, body,
         f"multipart/form-data; boundary={boundary}",
     )
@@ -2658,7 +2665,8 @@ async def api_upload_tiktok_video(request: Request):
             file_data = fh.read()
         body = part_head + file_data + part_tail
         del file_data  # free before the HTTP call
-        result = _postiz_proxy_post(
+        result = await run_in_threadpool(
+            _postiz_proxy_post,
             "/upload", auth, body,
             f"multipart/form-data; boundary={boundary}",
         )
