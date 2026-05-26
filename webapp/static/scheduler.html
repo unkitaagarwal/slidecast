@@ -1763,7 +1763,7 @@ function cardHTML(p) {
   <div class="card-top">
     <div class="thumb" style="font-size:22px">🖼️×${p.files.length}</div>
     <div class="post-info">
-      <div class="post-fname">Slideshow — ${p.files.length} slides${p.postTitle ? ` · ${esc(p.postTitle)}` : ""}${p.files.length > 10 ? ` <span style="background:rgba(240,185,106,.18);color:var(--warn);border-radius:5px;padding:1px 7px;font-size:11px;font-weight:700">⚠ Instagram: first 10 only</span>` : ""}</div>
+      <div class="post-fname">Slideshow — ${p.files.length} slides${p.postTitle ? ` · ${esc(p.postTitle)}` : ""}${p.files.length > 20 ? ` <span style="background:rgba(240,185,106,.18);color:var(--warn);border-radius:5px;padding:1px 7px;font-size:11px;font-weight:700">⚠ Instagram: first 20 only</span>` : ""}</div>
       <div class="post-fsize">${subline}</div>
       <div class="post-status-row" id="sr-${p.id}">${badgeHTML(p)}</div>
       ${p.err ? `<div style="font-size:12px;color:var(--error);margin-top:4px">⚠ ${esc(p.err)}</div>` : ""}
@@ -2020,7 +2020,10 @@ async function scheduleAll() {
       const doReelPath = p.slideshow && instaAccountIds.length > 0;
 
       if (p.slideshow) {
-        const INSTA_MAX = 10;
+        // Instagram raised its carousel cap from 10 → 20 slides in late 2024.
+        // A 12-slide compilation passes through without trimming. We still trim
+        // anything above 20 to respect Instagram's hard limit.
+        const INSTA_MAX = 20;
         const slidesToUpload = p.files.slice(0, INSTA_MAX);
         if (p.files.length > INSTA_MAX) {
           toast(`⚠ ${postLabel}: trimmed to ${INSTA_MAX} slides (Instagram max)`, "");
