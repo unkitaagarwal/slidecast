@@ -17,11 +17,12 @@ import os
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
-# Fixed CTA copy — same on every single slideshow, never AI-generated
+# Fixed CTA copy — same on every single-format slideshow, never AI-generated.
+# Domain-agnostic save prompt (food / fitness / finance / productivity / etc.).
 CTA_CAPTION: list[str] = [
-    "Here's the trick for saving recipes:",
-    "Like > Share > RecipeVault.",
-    "That's all it takes to keep the full recipe.",
+    "Save this carousel before you scroll on.",
+    "Like → Share → Bookmark.",
+    "Comes back when you need it.",
 ]
 
 from openai import OpenAI
@@ -83,66 +84,87 @@ class Recipe:
 # Prompt for the LLM that designs each recipe
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You design recipe-slideshow content for a TikTok food creator.
-The visual style is the popular "tight bowl shot" cooking-tutorial style: every
-slide is a clean, focused, overhead phone-photo of food in a single vessel
-(stainless steel mixing bowl, ceramic bowl, sheet pan, non-stick skillet,
-measuring cup) with a plain uncluttered background. NO kitchen environment,
-NO plants, NO towels, NO props. Just the vessel, the food, plain surface.
+SYSTEM_PROMPT = """You design 10-slide DEEP-DIVE carousels for social creators.
+The topic can be anything — recipes, workouts, money concepts, productivity
+playbooks, life skills, tech how-tos, anything. Infer the domain from the
+user's brief and adapt every part of the output accordingly.
+
+The visual style is the popular "tight subject shot" tutorial style: every
+slide is a clean, focused, overhead phone-photo of ONE element on a plain
+uncluttered background. No clutter, no environment, no props beyond what is
+the subject of that slide.
 
 You output ONLY a single valid JSON object, no prose.
 
-Each output is a complete recipe broken into exactly 10 slides that follow this fixed structure:
-1. hook          - the finished dish in the bowl/dish it was made in (recipe title goes here)
-2. ingredients   - all main ingredients laid in one bowl OR on a sheet pan, labeled later
-3. protein_prep  - the prepared protein/starch IN A BOWL (e.g. "Grilled chicken", "Cooked pasta")
-4. veg_one       - the first vegetable IN A BOWL (e.g. "Cherry tomatoes", "Cucumbers diced")
-5. veg_two       - the second vegetable IN A BOWL (e.g. "Red onion", "Avocado")
-6. sauce         - the sauce in a small bowl, with 3-5 component callouts
-7. combine       - everything mixed together IN ONE LARGE BOWL
-8. assemble      - the wrap/sandwich/plating happening, focused tight
-9. finish        - cooking IN A PAN or oven dish (sizzle/steam visible)
-10. final        - the finished dish plated, ready to eat
+Each output is broken into exactly 10 slides in this fixed structure (the
+slide_type values are NEVER changed — they're contract names. Map your topic
+to each conceptual slot.):
+
+  1. hook          → cover shot of the finished result. Title goes here.
+  2. ingredients   → "what you need" — overview of the components (ingredients
+                     for food; tools/exercises/concepts for any other domain).
+  3. protein_prep  → main component / heaviest hitter (the protein for food;
+                     the keystone exercise / core concept / primary tool for
+                     other domains).
+  4. veg_one       → first supporting component / sub-topic.
+  5. veg_two       → second supporting component / sub-topic.
+  6. sauce         → the secret formula or key framework, with 3-5 callouts
+                     listing its ingredients/components/principles.
+  7. combine       → everything assembled / integrated together.
+  8. assemble      → active execution shot (the doing).
+  9. finish        → the polish / final touches.
+  10. final        → the outcome / payoff shot.
 
 For each slide produce:
-- caption: a SHORT overlay label, descriptive of WHAT'S IN THE BOWL or WHAT IS HAPPENING.
-  Use the popular TikTok cooking-account style:
-    * Ingredient slides (3,4,5): the ingredient name (sometimes with quantity).
-      Examples: "Grilled chicken", "Cherry tomatoes", "Red onion", "Greek yogurt",
-      "Pomegranate seeds", "Sweet corn 1 cup", "Olive oil 2 tbsp"
-    * Action slides (7,8,9): a brief instruction.
-      Examples: "Mix it all", "Wrap it tight", "Pan fry 5 min", "Bake 175 / 8 min"
-    * Slide 1 caption is the recipe title (compositor auto-overrides anyway).
-    * Slide 10 caption: "Dig in", "Done", or similar 1-2 word punchline.
+
+- caption: a SHORT overlay label, descriptive of what's in the frame or what's
+  happening. Use punchy social-media voice. Domain-flexible examples:
+    Food (ingredients):     "Grilled chicken", "Cherry tomatoes", "Greek yogurt"
+    Fitness (ingredients):  "Bulgarian split squat", "Romanian deadlift"
+    Productivity (sauce):   "Deep work block 9-11am"
+    Finance (sauce):        "DCA + index fund + 10yr horizon"
+    Action slides (7,8,9):  "Mix it all" / "Pan fry 5 min"  (food)
+                            "3 sets × 10 reps"            (fitness)
+                            "Block 90 minutes"            (productivity)
+    Slide 10 caption:       1-2 word punchline. "Dig in", "Done", "Ship it".
 
 - image_prompt: a detailed visual prompt. ALWAYS lead with:
-    "Tight overhead phone-photo, [VESSEL] centered in frame, [WHAT'S INSIDE THE VESSEL],
+    "Tight overhead phone-photo, [SUBJECT] centered in frame, [WHAT IT IS],
     plain [SURFACE] visible at edges, nothing else in frame, clean and minimal."
-  Examples of good prompts:
-    * "Tight overhead phone-photo, stainless steel mixing bowl centered, filled with cooked
-      grilled chicken pieces, plain off-white kitchen counter visible at edges, nothing
-      else in frame, clean and minimal."
-    * "Tight overhead phone-photo, small ceramic ramekin bowl centered, filled with bright
-      red pomegranate seeds, plain butcher block wood surface, nothing else in frame."
-    * "Tight overhead phone-photo, non-stick black skillet centered on a clean stovetop,
-      golden seared salmon fillets sizzling inside, gentle steam, dark stovetop visible
-      at edges, nothing else in frame."
-  Avoid: kitchen props (plants, towels, paper towels, soap bottles, water glasses,
-  decorations). Keep image_prompt under 60 words.
+  Adapt the SUBJECT and SURFACE to the domain:
+    Food:         stainless mixing bowl / ceramic ramekin / cast-iron skillet
+                  on butcher block, white counter, marble
+    Fitness:      single dumbbell, kettlebell, resistance band, yoga mat
+                  on a gym floor or neutral mat
+    Finance:      notebook + pen / single index card / coffee mug
+                  on a clean desk or felt mat
+    Productivity: mechanical keyboard / single book / planner page
+                  on a tidy desk
+  Avoid: clutter, decorative props, plants, towels, anything beyond the subject
+  and its surface. Keep image_prompt under 60 words.
 
-- callouts: only for slide 6 (sauce); a list of 3-5 ingredient names that make up the sauce
-  (e.g. ["greek yogurt", "mayo", "mustard", "honey", "black pepper"]). Empty list for all
-  other slides.
+- callouts: only for slide 6 (sauce); a list of 3-5 names of the components
+  that make up the "sauce" (the secret formula). Examples:
+    Food sauce:        ["greek yogurt", "mayo", "mustard", "honey", "black pepper"]
+    Productivity sauce:["focus block", "single tab", "phone in drawer", "timer"]
+    Finance sauce:     ["DCA", "index funds", "10yr horizon", "auto-invest"]
+  Empty list for all other slides.
 
 Also produce:
 - slug: lowercase snake_case id, max 30 chars
 - title: human-readable title
 - short_pitch: 1 sentence, max 12 words
-- ingredients: full ingredient list with quantities, as an array of strings
+- ingredients: the "what you need" list (ingredients for food; tools or
+  concepts for other domains) as an array of strings with quantities/specifics
+  where applicable.
 """
 
 
-USER_TEMPLATE = """Design a recipe slideshow for: {brief}
+USER_TEMPLATE = """Design a 10-slide deep-dive slideshow for: {brief}
+
+Detect the domain (food/fitness/finance/productivity/lifestyle/tech/etc.) from
+the brief and map every slide_type to the appropriate concept for that domain
+while keeping the slide_type values exactly as listed below.
 
 Return JSON with this exact shape:
 {{

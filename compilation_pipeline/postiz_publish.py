@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import time
+from typing import Optional
 
 import requests
 
@@ -243,20 +244,102 @@ THEME_HASHTAGS = {
     "cookie":          ["#cookierecipe", "#bakingathome"],
 }
 
-# Universal hashtags appended to every compilation
-UNIVERSAL_HASHTAGS = [
-    "#RecipeVault",
-    "#cookwithme",
-    "#mealideas",
-    "#recipeideas",
-    "#whattocook",
-    "#Recipe",
-    "#DinnerIdeas",
-    "#EasyRecipe",
-    "#comfortfood",
-    "#foodtok",
-    "#fyp",
-]
+# Domain-specific hashtag banks. The first matching domain's pack is used as
+# the "universal" tail of hashtags for the compilation. Falls back to the
+# generic save-magnet pack when no domain is detected.
+_DOMAIN_HASHTAGS = {
+    "food": [
+        "#cookwithme", "#mealideas", "#recipeideas", "#whattocook",
+        "#Recipe", "#DinnerIdeas", "#EasyRecipe", "#comfortfood",
+        "#foodtok", "#fyp",
+    ],
+    "fashion": [
+        "#OOTD", "#styleinspo", "#wardrobeessentials", "#capsulewardrobe",
+        "#fashiontiktok", "#stylehacks", "#GetReadyWithMe", "#fyp",
+    ],
+    "fitness": [
+        "#fittok", "#gymtok", "#workoutroutine", "#fitnesstips",
+        "#healthandfitness", "#strengthtraining", "#gymmotivation", "#fyp",
+    ],
+    "finance": [
+        "#moneytok", "#fintok", "#personalfinance", "#investingtips",
+        "#financialfreedom", "#moneymatters", "#wealthbuilding", "#fyp",
+    ],
+    "productivity": [
+        "#productivitytips", "#productivityhacks", "#worksmarter",
+        "#deepwork", "#focustime", "#timemanagement", "#fyp",
+    ],
+    "lifestyle": [
+        "#lifestyletips", "#dailyhabits", "#selfcare", "#wellnesstok",
+        "#mindfulness", "#routinetok", "#fyp",
+    ],
+    "tech": [
+        "#techtok", "#techhacks", "#productivityapps", "#apps",
+        "#techreview", "#tech", "#fyp",
+    ],
+}
+
+# Backwards-compatible alias — older code paths that imported this constant
+# still work, but new code should call _pick_hashtags() and let it pick the
+# right bank based on the brief.
+UNIVERSAL_HASHTAGS = ["#RecipeVault"] + _DOMAIN_HASHTAGS["food"]
+
+
+# Domain keywords. Order matters — we pick the first domain whose keyword
+# fires. "food" stays the default for backward compatibility with the recipe
+# library, so non-food domains need decent keyword coverage to win.
+_DOMAIN_KEYWORDS = {
+    "fashion":      ("wardrobe", "outfit", "ootd", "style", "fashion", "clothing", "clothes",
+                     "closet", "accessor", "shoe", "boot", "dress ", "jeans", "denim",
+                     "capsule"),
+    "fitness":      ("workout", "gym", "lift", "bench", "squat", "deadlift", "cardio",
+                     "training", "exercise", "muscle", "fitness", "stretch", "yoga",
+                     "pilates", "running"),
+    "finance":      ("invest", "money", "budget", "saving", "stock", "index fund",
+                     "etf", "401k", "ira", "personal finance", "wealth", "debt",
+                     "credit score", "tax", "salary", "income"),
+    "productivity": ("productivity", "focus", "deep work", "time block", "habit",
+                     "morning routine", "evening routine", "workflow", "to-do",
+                     "schedule", "calendar", "task management"),
+    "tech":         ("app", "software", "saas", "tool", "tech", "ai ", "extension",
+                     "plugin", "developer", "coding", "automation"),
+    "lifestyle":    ("self-care", "selfcare", "wellness", "mindful", "meditat",
+                     "journal", "minimalis", "declutter", "sleep ", "rest",
+                     "anxiety", "stress"),
+    "food":         ("recipe", "dinner", "lunch", "breakfast", "snack", "meal",
+                     "cooking", "cook ", "bake", "pantry", "kitchen", "ingredient",
+                     "dish", "cuisine", "appetiz", "dessert"),
+}
+
+
+def _detect_domain(haystack: str) -> str:
+    """Return the matched domain key for the given lowercased haystack.
+
+    Walks _DOMAIN_KEYWORDS in declared order so non-food domains win over
+    "food" when their keywords appear. Falls back to "food" if nothing
+    matches — preserves existing behaviour on legacy recipe carousels."""
+    for domain, kws in _DOMAIN_KEYWORDS.items():
+        if any(k in haystack for k in kws):
+            return domain
+    return "food"
+
+
+def _app_to_hashtag(app: Optional[str]) -> Optional[str]:
+    """Convert a detected app mention into a hashtag.
+
+    "Nutrilens"           -> "#Nutrilens"
+    "@focuskit"           -> "#focuskit"
+    "https://x.app/path"  -> "#x"
+    """
+    if not app:
+        return None
+    val = app.strip().lstrip("@")
+    if val.startswith(("http://", "https://")):
+        host = val.split("://", 1)[1].split("/", 1)[0]
+        val = host.split(".", 1)[0]
+    val = val.split(".", 1)[0]
+    val = "".join(c for c in val if c.isalnum())
+    return f"#{val}" if val else None
 
 
 def _pick_hashtags(comp: dict) -> list[str]:
@@ -265,15 +348,31 @@ def _pick_hashtags(comp: dict) -> list[str]:
         comp.get("theme", "") + " " +
         " ".join(r.get("title", "") for r in comp.get("recipes", []))
     ).lower()
+    domain = _detect_domain(haystack)
     tags: list[str] = []
-    for kw, hs in THEME_HASHTAGS.items():
-        if kw in haystack:
-            for t in hs:
-                if t not in tags:
-                    tags.append(t)
-    for t in UNIVERSAL_HASHTAGS:
+
+    # 1. User-app hashtag wins the lead slot when detected
+    app_tag = _app_to_hashtag(_detect_app_mention(comp))
+    if app_tag:
+        tags.append(app_tag)
+
+    # 2. RecipeVault hashtag only when the brief is explicitly recipevault-flavoured
+    if "recipevault" in haystack:
+        tags.append("#RecipeVault")
+
+    # 3. Theme-keyword tags (food-only bank, only fires for food domain)
+    if domain == "food":
+        for kw, hs in THEME_HASHTAGS.items():
+            if kw in haystack:
+                for t in hs:
+                    if t not in tags:
+                        tags.append(t)
+
+    # 4. Universal-by-domain hashtags
+    for t in _DOMAIN_HASHTAGS.get(domain, _DOMAIN_HASHTAGS["lifestyle"]):
         if t not in tags:
             tags.append(t)
+
     # Cap at 14 tags total — TikTok still ranks if there are too many
     return tags[:14]
 
@@ -282,26 +381,101 @@ def _pick_hashtags(comp: dict) -> list[str]:
 _OPENER_EMOJIS = ["😏", "😅", "🤤", "👀", "💕", "🍳", "✨"]
 
 
-_CTA_CAPTION = [
+# Generic save-magnet CTA used for any non-RecipeVault carousel.
+_CTA_CAPTION_GENERIC = [
+    "Save this carousel before you scroll on.",
+    "Like → Share → Bookmark.",
+    "Comes back when you need it.",
+]
+
+# RecipeVault-flavoured CTA. Only used when the user's brief (theme) mentions
+# RecipeVault, so we don't accidentally promote the recipe app on a finance
+# or fitness carousel.
+_CTA_CAPTION_RECIPEVAULT = [
     "Here's the trick for saving recipes:",
     "Like > Share > RecipeVault.",
     "That's all it takes to keep the full recipe.",
 ]
 
 
+def _detect_app_mention(comp: dict) -> Optional[str]:
+    """Return a non-empty user-supplied app/link/handle if the brief mentions one.
+
+    Checks the compilation's ``theme`` field (the user's original prompt) in
+    this order:
+      1. URL like ``https://focuskit.app``
+      2. @handle like ``@nutrilens``
+      3. Bare app name after a promotional keyword (e.g. ``"-promo for
+         Nutrilens"`` → ``"Nutrilens"``). The app name must start with a
+         capital letter so we don't accidentally pick up sentence-starting
+         lowercase words.
+    """
+    theme = (comp.get("theme") or "").strip()
+    if not theme:
+        return None
+    import re as _re
+
+    # 1. URL — strip trailing punctuation so "(focuskit.app)" doesn't keep ")"
+    m = _re.search(r"(https?://[^\s)\]\}>,;'\"]+)", theme)
+    if m:
+        return m.group(1)
+    # 2. @handle
+    m = _re.search(r"(@[\w.\-]+)", theme)
+    if m:
+        return m.group(1)
+    # 3. Bare app name after a promotional keyword
+    KEYWORDS = (
+        "promo for", "promo by", "promoting", "promote",
+        "push for", "advert for", "sponsored by", "sponsoring",
+        "shoutout for", "shoutout to",
+    )
+    theme_lc = theme.lower()
+    for kw in KEYWORDS:
+        idx = theme_lc.find(kw)
+        if idx < 0:
+            continue
+        rest = theme[idx + len(kw):].lstrip(" -:—")
+        m = _re.match(r"([A-Z][\w.\-]{1,30})", rest)
+        if m:
+            return m.group(1)
+    return None
+
+
 def build_caption(comp: dict) -> str:
-    """Short clean caption — hook + RecipeVault CTA + hashtags. No recipe dump."""
+    """Short clean caption — hook + CTA + hashtags. No recipe dump.
+
+    CTA selection:
+      1. If the user's theme explicitly mentions ``recipevault`` (case-
+         insensitive), use the legacy RecipeVault-app CTA.
+      2. Else if the theme contains a URL or @handle, build a personalised
+         CTA promoting that app/link.
+      3. Otherwise use the domain-neutral save prompt.
+    """
     hook = comp.get("hook_caption", "").strip()
     # Pick a deterministic emoji based on the slug so a given compilation
     # always gets the same emoji.
     slug = comp.get("slug", "")
     emoji = _OPENER_EMOJIS[abs(hash(slug)) % len(_OPENER_EMOJIS)]
 
+    theme_lc = (comp.get("theme") or "").lower()
+    if "recipevault" in theme_lc:
+        cta = _CTA_CAPTION_RECIPEVAULT
+    else:
+        app_mention = _detect_app_mention(comp)
+        if app_mention:
+            cta = [
+                "Want more like this?",
+                f"Check out {app_mention}",
+                "Save this so future-you doesn't have to search.",
+            ]
+        else:
+            cta = _CTA_CAPTION_GENERIC
+
     hashtags = " ".join(_pick_hashtags(comp))
     lines = [
         f"{hook} {emoji}",
         "",
-        *_CTA_CAPTION,
+        *cta,
         "",
         hashtags,
     ]

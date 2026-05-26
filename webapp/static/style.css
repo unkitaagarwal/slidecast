@@ -595,6 +595,138 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 .prompt-row input::placeholder { color: var(--ink-mute); }
 .prompt-row .btn-primary { padding: 12px 22px; }
 
+/* ──────────────────────────────────────────────────────────────────────
+   Prompt dialog (redesigned "Make your next banger" input)
+   Mirrors the screenshot-1 dialog layout but adapted to the dark theme
+   ────────────────────────────────────────────────────────────────────── */
+.prompt-dialog {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 24px 16px;
+  backdrop-filter: blur(20px);
+}
+.prompt-dialog-head {
+  display: flex; align-items: flex-start; gap: 14px;
+  margin-bottom: 16px;
+}
+.prompt-dialog-icon {
+  flex-shrink: 0;
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(255, 92, 122, 0.22), rgba(244, 196, 122, 0.22));
+  color: var(--coral);
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255, 92, 122, 0.35);
+}
+.prompt-dialog-title {
+  margin: 6px 0 0; flex: 1;
+  font-family: var(--sans);
+  font-size: 22px; font-weight: 800; line-height: 1.25;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.prompt-textarea-wrap {
+  position: relative;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px 36px;
+  transition: border-color 0.15s ease;
+}
+.prompt-textarea-wrap:focus-within { border-color: var(--border-2); }
+.prompt-textarea {
+  width: 100%;
+  background: transparent; border: 0; outline: 0; resize: vertical;
+  color: var(--ink);
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 14px; font-weight: 400; line-height: 1.6;
+  min-height: 90px;
+}
+.prompt-textarea::placeholder { color: var(--ink-mute); }
+.prompt-char-count {
+  position: absolute; right: 14px; bottom: 10px;
+  font-size: 12px; color: var(--ink-mute); font-weight: 500;
+  pointer-events: none;
+}
+
+.prompt-hint {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-top: 12px; padding: 10px 14px;
+  background: rgba(244, 196, 122, 0.06);
+  border: 1px solid rgba(244, 196, 122, 0.18);
+  border-radius: var(--radius);
+  color: var(--ink-dim);
+  font-size: 13px; line-height: 1.5;
+}
+.prompt-hint svg {
+  flex-shrink: 0;
+  color: var(--gold);
+  margin-top: 2px;
+}
+.prompt-hint em {
+  color: var(--ink-2);
+  font-style: italic;
+  font-weight: 500;
+}
+
+.prompt-dialog-actions-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 14px;
+}
+.btn-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+  padding: 8px 14px; border-radius: 999px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s ease;
+}
+.btn-pill:hover { background: var(--panel-3); color: var(--ink); }
+
+.prompt-divider {
+  height: 1px; background: var(--border);
+  margin: 18px 0 16px;
+}
+
+.prompt-dialog-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.prompt-selects { display: flex; gap: 8px; flex-wrap: wrap; }
+.select-pill {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px 8px 16px;
+  font-size: 13px; font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.select-pill:hover { background: var(--panel-3); color: var(--ink); }
+.select-pill select {
+  background: transparent; border: 0; outline: 0;
+  color: inherit; font: inherit;
+  appearance: none; -webkit-appearance: none;
+  padding-right: 4px;
+  cursor: pointer;
+}
+.select-pill svg { opacity: 0.7; }
+
+.btn-generate {
+  padding: 12px 22px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.prompt-dialog .examples {
+  padding: 18px 0 0;
+}
+
 .examples { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 14px 4px; align-items: center; }
 .examples-label { color: var(--ink-mute); font-size: 13px; margin-right: 4px; font-weight: 600; }
 .chip {

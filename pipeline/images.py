@@ -71,8 +71,69 @@ ANGLE_OVERRIDES = {
 }
 
 
+# Generic style suffix used when the brief is NOT food. Keeps the realism /
+# overhead-phone-photo bias of the original suffix but drops every food-
+# specific vocabulary ("vessel", "kitchen counter", "stovetop", etc.) that
+# was forcing wardrobe / fitness / finance prompts to render as food.
+GENERIC_STYLE_SUFFIX = (
+    " STYLE: cinematic editorial phone-photo, the SUBJECT described above is "
+    "centered and fills most of the frame. Background: extremely clean and "
+    "uncluttered — a plain neutral surface visible at the edges, NOTHING else "
+    "in frame: no random props, no plants, no clutter, no people unless the "
+    "subject is a person. "
+    "Lighting: soft natural daylight from above or a slight angle, realistic "
+    "gentle shadow, warm but not oversaturated. "
+    "Real textures, real materials, slight imperfections — looks like a real "
+    "phone photo, NOT illustration, NOT AI-generated, NOT 3D render, NOT "
+    "studio glamour, NOT plastic-perfect. "
+    "Camera: square 1:1 crop, tight framing on the subject. "
+    "Strict negatives: no text, no watermark, no logos, no food unless the "
+    "subject is explicitly food, no oversaturation, no airbrushed AI sheen."
+)
+
+# Keywords that indicate the prompt is about food / cooking. Matched with
+# word boundaries (\b) so e.g. "stock chart" doesn't trip "stock" as a food
+# term. Skip terms that are genuinely ambiguous outside food contexts
+# (pan, dish, herb, spice).
+_FOOD_PROMPT_KEYWORDS = (
+    "skillet", "saucepan", "ingredient", "ingredients", "cooking",
+    "recipe", "recipes", "chopped", "diced", "minced", "sliced",
+    "saute", "sauté", "sear", "simmer", "broil", "roast", "roasted",
+    "bake", "baked", "grill", "grilled", "stir-fry", "stirfry",
+    "garnish", "marinade", "marinated", "broth", "fillet",
+    "shrimp", "salmon", "chicken", "beef", "pork", "tofu", "pasta",
+    "noodle", "noodles", "salad", "soup", "stew", "curry", "burger",
+    "taco", "burrito", "casserole", "smoothie", "pancake", "waffle",
+    "omelette", "omelet", "risotto", "ramen", "sushi", "kebab",
+    "lasagna", "quesadilla", "frittata",
+)
+
+# slide_types that are inherently food-specific (used by the single-recipe
+# pipeline). When one of these is passed in, we always use the food suffix
+# because the layout/composition expects it.
+_FOOD_SLIDE_TYPES = {
+    "ingredients", "protein_prep", "veg_one", "veg_two", "sauce",
+    "combine", "assemble", "finish", "final",
+}
+
+
+def _looks_like_food(base_prompt: str, slide_type: str) -> bool:
+    """Heuristic: is this image prompt about food?"""
+    if slide_type in _FOOD_SLIDE_TYPES:
+        return True
+    pl = base_prompt.lower()
+    import re as _re
+    # Use word boundaries so e.g. "stock chart" doesn't trip "stock".
+    pattern = r"\b(" + "|".join(_re.escape(k) for k in _FOOD_PROMPT_KEYWORDS) + r")\b"
+    return bool(_re.search(pattern, pl))
+
+
 def build_prompt(base_prompt: str, slide_type: str) -> str:
-    suffix = ANGLE_OVERRIDES.get(slide_type, STYLE_SUFFIX)
+    # Slide-type-specific angle overrides win (they're food-specific by
+    # design, used only by the single-recipe pipeline).
+    if slide_type in ANGLE_OVERRIDES:
+        return f"{base_prompt}\n\nSTYLE: {ANGLE_OVERRIDES[slide_type]}"
+    suffix = STYLE_SUFFIX if _looks_like_food(base_prompt, slide_type) else GENERIC_STYLE_SUFFIX
     return f"{base_prompt}\n\nSTYLE: {suffix}"
 
 

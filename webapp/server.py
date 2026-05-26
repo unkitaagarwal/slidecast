@@ -755,7 +755,7 @@ AUX_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
 def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
     try:
-        JOBS.update(job_id, status="running", message="Generating recipe with Gemini…")
+        JOBS.update(job_id, status="running", message="Crafting your slideshow…")
         single = _import_single()
 
         # Stream phase-by-phase progress into the job record so the UI's
@@ -781,7 +781,7 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
             print(f"  [caption] build failed: {_e}")
 
         # Upload to Firebase Storage + log to Firestore
-        JOBS.update(job_id, message="Uploading slides to Firebase…")
+        JOBS.update(job_id, message="Uploading your slides to the cloud…")
         slide_urls = _upload_slides_and_log(
             slides_dir     = os.path.join(rdir, "slides"),
             format_name    = "single",
@@ -824,7 +824,7 @@ def _run_compilation(job_id: str, theme: str,
                      user_email: Optional[str] = None):
     try:
         JOBS.update(job_id, status="running",
-                    message="Generating 5 recipes with Gemini…")
+                    message="Crafting your 5-item compilation…")
         comp = _import_compilation()
 
         # Stream phase-by-phase progress from the pipeline into the job record
@@ -851,7 +851,7 @@ def _run_compilation(job_id: str, theme: str,
             print(f"  [caption] build failed: {_e}")
 
         # Upload to Firebase Storage + log to Firestore
-        JOBS.update(job_id, message="Uploading slides to Firebase…")
+        JOBS.update(job_id, message="Uploading your slides to the cloud…")
         slide_urls = _upload_slides_and_log(
             slides_dir     = os.path.join(cdir, "slides"),
             format_name    = "compilation",
@@ -1472,12 +1472,15 @@ def api_download_zip(format: str, slug: str):
         if caption:
             zf.writestr(f"{folder}/caption.txt", caption)
 
-        # Metadata JSON (title, subtitle, hashtags, hook, CTA copy, caption)
+        # Metadata JSON (title, subtitle, hashtags, hook, CTA copy, caption).
+        # Default CTA is the generic save-magnet line — RecipeVault-flavoured
+        # CTA only fires when the brief explicitly mentioned RecipeVault and
+        # was baked into spec["cta_caption"] by the generator.
         _CTA_CAPTION = (
             spec.get("cta_caption") or [
-                "Here's the trick for saving recipes:",
-                "Like > Share > RecipeVault.",
-                "That's all it takes to keep the full recipe.",
+                "Save this carousel before you scroll on.",
+                "Like → Share → Bookmark.",
+                "Comes back when you need it.",
             ]
         )
         meta = {

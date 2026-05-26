@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Scheduler — RecipeVault Studio</title>
+<title>Scheduler — The SlideCast</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -515,14 +515,14 @@ body {
           <path d="M9 10l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </span>
-      <span class="rv-brand-name">RecipeVault <em>Studio</em></span>
+      <span class="rv-brand-name">The <em>SlideCast</em></span>
     </a>
     <div class="rv-nav-badge">
       <span class="rv-nav-badge-dot"></span>
       Bulk Scheduler
     </div>
     <a class="rv-nav-back" href="/">
-      ← Back to Studio
+      ← Back to The SlideCast
     </a>
     <div id="nav-user-slot" style="display:flex;align-items:center;gap:8px;margin-left:auto;"></div>
   </div>
@@ -1348,41 +1348,56 @@ function showSkippedPanel(list) {
 // ── Extract caption + title from either JSON format ─────────────────────────
 // New format: { caption, title, slides[], hashtags_str, hashtags[], short_pitch, … }
 // Old format: { hook_caption, recipes[], cta_caption[], theme, … }
+//
+// Caption priority: ``cta_caption`` wins whenever it's present. The CTA is the
+// save-magnet block ("Here's the trick for saving recipes: / Like > Share >
+// RecipeVault. / That's all it takes to keep the full recipe.") and is the
+// post copy that actually drives engagement. The bland ``caption`` field
+// ("✨ <title>\n\n#hashtags") is used only as a fallback when no CTA exists.
 function extractMeta(metadata) {
   if (!metadata) return { caption: "", title: "" };
+
+  const title = (metadata.title || metadata.theme || metadata.slug || "").slice(0, 100);
 
   // Resolve hashtag string from whichever field is present
   const hashtagsStr = (
     metadata.hashtags_str ||
-    (Array.isArray(metadata.hashtags) ? metadata.hashtags.join(" ") : "")
+    (Array.isArray(metadata.hashtags) ? metadata.hashtags.join(" ") : "") ||
+    // The "caption" field is "✨ Title\n\n#tag1 #tag2 …" — extract trailing hashtags
+    (typeof metadata.caption === "string"
+      ? (metadata.caption.match(/#[\w-]+(?:\s+#[\w-]+)*\s*$/m) || [""])[0]
+      : "")
   ).trim();
 
-  // New format — caption is already fully assembled
+  // Preferred path — CTA block becomes the caption body
+  const ctaText = Array.isArray(metadata.cta_caption)
+    ? metadata.cta_caption.filter(Boolean).join("\n")
+    : (typeof metadata.cta_caption === "string" ? metadata.cta_caption : "");
+
+  if (ctaText.trim()) {
+    const parts = [];
+    if (title) parts.push(`✨ ${title}`);
+    if (metadata.hook_caption) parts.push(metadata.hook_caption);
+    parts.push(ctaText.trim());
+    if (hashtagsStr) parts.push(hashtagsStr);
+    return { caption: parts.join("\n\n").trim(), title };
+  }
+
+  // Fallback — new format with no CTA: use the pre-assembled caption
   if (metadata.caption) {
     let caption = metadata.caption.trim();
-    // Append hashtags if they're not already present in the caption
     if (hashtagsStr && !caption.includes(hashtagsStr.slice(0, 15))) {
       caption = caption + "\n\n" + hashtagsStr;
     }
-    return {
-      caption,
-      title: (metadata.title || metadata.slug || "").slice(0, 100)
-    };
+    return { caption, title };
   }
 
-  // Old format — build caption from parts
+  // Last-resort fallback — old format pieces, no caption or CTA
   const parts = [];
   if (metadata.hook_caption) parts.push(metadata.hook_caption);
   if (metadata.recipes?.length) parts.push(metadata.recipes.map(r => r.title).join("\n"));
-  if (metadata.cta_caption?.length) {
-    parts.push(Array.isArray(metadata.cta_caption)
-      ? metadata.cta_caption.join("\n") : metadata.cta_caption);
-  }
   if (hashtagsStr) parts.push(hashtagsStr);
-  return {
-    caption: parts.join("\n\n").trim(),
-    title:   (metadata.theme || "").slice(0, 100)
-  };
+  return { caption: parts.join("\n\n").trim(), title };
 }
 
 // ── Build a post object from real File objects ───────────────────────────────
