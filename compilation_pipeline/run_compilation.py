@@ -69,6 +69,49 @@ from compositor_compilation import (  # noqa: E402
 )
 
 
+_APP_KEYWORDS = (
+    "promo for", "promo by", "promoting", "promote",
+    "push for", "advert for", "sponsored by", "sponsoring",
+    "shoutout for", "shoutout to",
+)
+
+
+def _detect_cta_context(theme: str) -> tuple[Optional[str], bool]:
+    """Inspect the user's brief and return (app_name, is_recipevault).
+
+    app_name: the matched URL / @handle / bare app name, or None.
+    is_recipevault: True iff the brief explicitly mentions RecipeVault (the
+    only context that should keep the legacy recipe-keeper card image).
+    """
+    import re as _re
+    if not theme:
+        return None, False
+    theme_lc = theme.lower()
+    is_rv = "recipevault" in theme_lc
+
+    # URL
+    m = _re.search(r"(https?://[^\s)\]\}>,;'\"]+)", theme)
+    if m:
+        return m.group(1), is_rv
+    # @handle
+    m = _re.search(r"(@[\w.\-]+)", theme)
+    if m:
+        return m.group(1), is_rv
+    # Bare app name after a promotional keyword
+    for kw in _APP_KEYWORDS:
+        idx = theme_lc.find(kw)
+        if idx < 0:
+            continue
+        rest = theme[idx + len(kw):].lstrip(" -:—")
+        m = _re.match(r"([A-Z][\w.\-]{1,30})", rest)
+        if m:
+            return m.group(1), is_rv
+    return None, is_rv
+
+
+from typing import Optional
+
+
 def run_one_compilation(theme: str, progress_cb=None) -> str:
     """Generate one compilation carousel.
 
@@ -87,12 +130,12 @@ def run_one_compilation(theme: str, progress_cb=None) -> str:
             print(f"  [progress_cb] swallowed: {_e}")
 
     print(f"\n=== {theme} ===")
-    _emit("Drafting 5 recipes with Gemini (this can take 1-2 min)…")
+    _emit("Brainstorming your hook + 5 items (this usually takes 1-2 minutes)…")
     comp = generate_compilation(theme)
     print(f"  -> {comp.slug}")
     print(f"  -> hook: {comp.hook_caption}")
     print(f"  -> recipes: {[r.title for r in comp.recipes]}")
-    _emit(f"Got {len(comp.recipes)} recipes: {comp.slug}")
+    _emit(f"Got it — {len(comp.recipes)} items locked in ✓")
 
     cdir = os.path.join(OUTPUT_ROOT, comp.slug)
     raw_dir = os.path.join(cdir, "raw")
@@ -124,7 +167,7 @@ def run_one_compilation(theme: str, progress_cb=None) -> str:
     default_workers = "2" if os.environ.get("RENDER") else "6"
     _IMAGE_WORKERS = max(1, min(len(tasks), int(os.environ.get("IMAGE_GEN_WORKERS", default_workers))))
 
-    _emit(f"Generating {len(tasks)} hero images with Nano Banana ({_IMAGE_WORKERS} at a time)…")
+    _emit(f"Painting {len(tasks)} cinematic visuals in parallel — hold tight…")
     _completed = 0
     with ThreadPoolExecutor(max_workers=_IMAGE_WORKERS) as pool:
         futures = {pool.submit(_gen, n, p, st): n for n, p, st in tasks}
@@ -138,24 +181,24 @@ def run_one_compilation(theme: str, progress_cb=None) -> str:
                 try:
                     f.result()
                     print(f"  raw: {n}")
-                    _emit(f"Image {_completed}/{len(tasks)} ready ({n})")
+                    _emit(f"Visual {_completed}/{len(tasks)} ready ✓")
                 except Exception as e:
                     print(f"  RAW FAIL {n}: {e}")
-                    _emit(f"Image {_completed}/{len(tasks)} failed ({n}): {e}")
+                    _emit(f"Visual {_completed}/{len(tasks)} had a hiccup — moving on")
         except TimeoutError:
             for f, n in futures.items():
                 if not f.done():
                     f.cancel()
                     print(f"  RAW TIMEOUT {n}: image took >{_IMAGE_TIMEOUT}s — skipping")
-            _emit(f"Hit image-gen timeout ({_IMAGE_TIMEOUT}s) — proceeding with partial set")
+            _emit("Visuals took a bit too long — using what's ready")
 
     # ---- Step 2: composite 12 slides ----
     print("  compositing slides...")
-    _emit("Compositing 12 slides (hook + 5 recipes × 2 + CTA)…")
+    _emit("Stitching everything into your final slides…")
 
     def _compose(label, fn, *args):
         fn(*args)
-        _emit(f"Composited {label}")
+        _emit(f"Slide {label} ready")
 
     _compose("1/12 hook", composite_hook, raw_paths["hook"], comp.hook_caption,
              os.path.join(slides_dir, "01_hook.png"))
@@ -170,9 +213,17 @@ def run_one_compilation(theme: str, progress_cb=None) -> str:
     _compose("5/12 recipe 2 page", composite_recipe_page, comp.recipes[1].__dict__,
              os.path.join(slides_dir, "05_recipe2_page.png"))
 
-    # Mid-carousel CTA
-    _compose("6/12 CTA", composite_cta, comp.cta_caption,
-             os.path.join(slides_dir, "06_cta.png"))
+    # Mid-carousel CTA — detect promotional context from the user's theme
+    # so we render the right card: RecipeVault static image vs. user-supplied
+    # app pill vs. nothing.
+    cta_app_name, cta_is_recipevault = _detect_cta_context(theme)
+    composite_cta(
+        comp.cta_caption,
+        os.path.join(slides_dir, "06_cta.png"),
+        app_name=cta_app_name,
+        is_recipevault=cta_is_recipevault,
+    )
+    _emit("Slide 6/12 CTA ready")
 
     # Recipes 3, 4, 5
     _compose("7/12 recipe 3 photo", composite_photo, raw_paths["hero3"], comp.recipes[2].title,

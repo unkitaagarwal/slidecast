@@ -111,17 +111,17 @@
 
   // Smarter status messages — rotate as job runs
   const STAGE_MESSAGES_COMP = [
-    'Drafting hooks + 5 recipes via Gemini…',
-    'Generating cinematic hero photos with Nano Banana…',
-    'Rendering parchment recipe pages…',
-    'Compositing CTA + slide titles…',
-    'Almost there — final layer of polish…',
+    'Brainstorming your hook + 5 items…',
+    'Painting cinematic visuals — one per item…',
+    'Laying out the detail pages…',
+    'Polishing the CTA + slide titles…',
+    'Almost there — adding the final touch…',
   ];
   const STAGE_MESSAGES_SINGLE = [
-    'Drafting recipe + slide breakdown via Gemini…',
-    'Generating bowl shots with Nano Banana…',
+    'Sketching your 10-slide story…',
+    'Painting overhead-style visuals…',
     'Compositing slides with auto-fit text…',
-    'Adding the final RecipeVault CTA…',
+    'Adding the final CTA slide…',
     'Wrapping it up…',
   ];
 

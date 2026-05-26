@@ -38,6 +38,44 @@ CTA_BG = (255, 92, 122)                # warm coral pink
 CTA_TEXT = (255, 255, 255)
 
 
+# ---------------------------------------------------------------------------
+# Domain detection — used to switch the recipe-page layout between the
+# food-cookbook style (INGREDIENTS + INSTRUCTIONS) and the generic
+# information-page style (OVERVIEW + KEY POINTS) for other niches.
+# ---------------------------------------------------------------------------
+
+_FOOD_SECTION_KEYWORDS = (
+    "ingredient", "for the", "for dish", "for serving",
+    "protein", "marinade", "garnish", "topping", "sauce",
+    "creaminess", "spice", "dressing", "filling", "dough",
+    "batter", "glaze", "rub", "seasoning",
+)
+
+
+def _is_food_item(recipe: dict) -> bool:
+    """Heuristic: is this item from the food/recipe domain?
+
+    Looks at the section names Gemini chose for ``ingredient_sections``. Recipe
+    outputs use names like "FOR THE PROTEIN" / "FOR THE SAUCE" / "MARINADE";
+    non-food outputs use things like "WARM-UP" / "KEY FACTS" / "TOOLS".
+
+    Falls back to ``True`` (food) when the recipe is missing sections — that
+    preserves the original behaviour for legacy JSON specs in the library.
+    """
+    # Honour an explicit domain override if Gemini wrote one
+    domain = (recipe.get("domain") or "").strip().lower()
+    if domain in ("food", "recipe", "recipes", "cooking"):
+        return True
+    if domain and domain not in ("auto", ""):
+        return False  # an explicit non-food domain was set
+
+    sections = recipe.get("ingredient_sections") or []
+    if not sections:
+        return True
+    joined = " ".join(str(s.get("name", "")).lower() for s in sections)
+    return any(kw in joined for kw in _FOOD_SECTION_KEYWORDS)
+
+
 def _load_font(size: int, weight: str = "bold") -> ImageFont.FreeTypeFont:
     paths = []
     if weight == "xbold":
@@ -502,10 +540,17 @@ def composite_recipe_page(recipe: dict, out_path: str,
     body_font = _load_font(chosen_body_size, weight="regular")
     body_bold = _load_font(chosen_body_size, weight="bold")
 
-    # ---- Left column: INGREDIENTS ----
+    # Domain-aware column headers — food keeps the cookbook-style INGREDIENTS
+    # / INSTRUCTIONS labels, anything else uses generic OVERVIEW / KEY POINTS
+    # so the slide reads correctly for fitness, finance, productivity etc.
+    is_food = _is_food_item(recipe)
+    LEFT_HEADER  = "INGREDIENTS:" if is_food else "OVERVIEW:"
+    RIGHT_HEADER = "INSTRUCTIONS:" if is_food else "KEY POINTS:"
+
+    # ---- Left column: INGREDIENTS / OVERVIEW ----
     y = col_top
     LEFT_MAX_Y = SLIDE_H - FOOTER_RESERVE
-    d.text((left_x, y), "INGREDIENTS:", font=header_font, fill=PARCHMENT_HEADER)
+    d.text((left_x, y), LEFT_HEADER, font=header_font, fill=PARCHMENT_HEADER)
     y += int(header_font.size * 1.40)
 
     for sec in sections:
@@ -531,11 +576,11 @@ def composite_recipe_page(recipe: dict, out_path: str,
                 y += int(body_font.size * 1.28)
         y += 10
 
-    # ---- Right column: INSTRUCTIONS (with bold action labels) ----
+    # ---- Right column: INSTRUCTIONS / KEY POINTS (with bold action labels) ----
     y = col_top
     # Hard ceiling: anything past this y must NOT be drawn (footer reserve).
     MAX_Y = SLIDE_H - FOOTER_RESERVE
-    d.text((right_x, y), "INSTRUCTIONS:", font=header_font, fill=PARCHMENT_HEADER)
+    d.text((right_x, y), RIGHT_HEADER, font=header_font, fill=PARCHMENT_HEADER)
     y += int(header_font.size * 1.40)
 
     line_h_body = int(body_font.size * 1.28)
@@ -572,14 +617,17 @@ def composite_recipe_page(recipe: dict, out_path: str,
                 break  # don't render any more steps
         y += 8
 
-    # ---- Bottom decorative band + RecipeVault watermark ----
+    # ---- Bottom decorative band + brand watermark ----
     d.rectangle([(SAFE_X, SLIDE_H - 90), (SLIDE_W - SAFE_X, SLIDE_H - 86)],
                 fill=PARCHMENT_TITLE)
     d.rectangle([(SAFE_X, SLIDE_H - 76), (SLIDE_W - SAFE_X, SLIDE_H - 73)],
                 fill=PARCHMENT_TITLE)
 
+    # Domain-flavoured watermark: food slides keep the meal-planner tagline,
+    # everything else uses the generic SlideCast brand line.
     wm_font = _load_font(22, weight="bold")
-    wm = "RECIPEVAULT  /  meal planner & grocery list"
+    wm = "THE SLIDECAST  /  meal planner & grocery list" if is_food \
+        else "THE SLIDECAST  /  save & share carousels"
     bbox = d.textbbox((0, 0), wm, font=wm_font)
     wm_w = bbox[2] - bbox[0]
     d.text(((SLIDE_W - wm_w) // 2, SLIDE_H - 56), wm,
@@ -593,11 +641,20 @@ def composite_recipe_page(recipe: dict, out_path: str,
 # Slide type: CTA (mid-carousel, with cta_card.png embedded)
 # ---------------------------------------------------------------------------
 
-def composite_cta(cta_lines: list[str], out_path: str) -> str:
+def composite_cta(cta_lines: list[str], out_path: str,
+                  *, app_name: Optional[str] = None,
+                  is_recipevault: bool = False) -> str:
     """Mid-carousel CTA: warm coral pink with radial-style shading.
-    Layout: caption text sits in upper-middle, cta_card.png sits DIRECTLY
+    Layout: caption text sits in upper-middle, app card sits DIRECTLY
     below it. The whole text+card group is centered vertically and stays
-    inside the 75% horizontal safe zone."""
+    inside the 75% horizontal safe zone.
+
+    Card behaviour:
+      - ``is_recipevault=True``  → embed the static ``assets/cta_card.png``
+        (RecipeVault recipe-keeper card). Use ONLY for RecipeVault carousels.
+      - ``app_name=<str>``       → render a text-based pill-card with "Get
+        <app_name>". Used when the user mentioned their own app in the brief.
+      - neither                  → no card; the CTA lines stand alone."""
     # Build a vertical pink gradient with subtle radial brightening
     grad = Image.new("RGBA", (SLIDE_W, SLIDE_H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
@@ -646,15 +703,61 @@ def composite_cta(cta_lines: list[str], out_path: str) -> str:
 
     text_h = sum(lh for _, _, lh in line_blocks)
 
-    # ---- Load CTA card (sits directly under text) ----
+    # ---- Build the CTA card (sits directly under text) ----
+    # Three modes: RecipeVault image / user-app text pill / nothing
     card = None
     card_h = 0
-    if os.path.exists(CTA_CARD_PATH):
+    if is_recipevault and os.path.exists(CTA_CARD_PATH):
         card = Image.open(CTA_CARD_PATH).convert("RGBA")
         target_w = 760  # respects safe zone (~70% width)
         ratio = target_w / card.width
         card = card.resize((target_w, int(card.height * ratio)), Image.LANCZOS)
         card_h = card.height
+    elif app_name:
+        # Render a clean white-pill card with the user's app name. Strips a
+        # leading "@" or trailing TLD ("focuskit.app" → "focuskit") so the
+        # name reads naturally on the slide.
+        import re as _re_local
+        display = app_name.lstrip("@")
+        if display.lower().startswith(("http://", "https://")):
+            # Use just the hostname's first label as the display name
+            display = display.split("://", 1)[-1].split("/", 1)[0].split(".", 1)[0]
+        display = _re_local.sub(r"\.(com|app|io|co|ai|net|org)$", "", display, flags=_re_local.IGNORECASE)
+        # Card dimensions
+        card_w = 760
+        card_h = 200
+        card = Image.new("RGBA", (card_w, card_h), (0, 0, 0, 0))
+        cd = ImageDraw.Draw(card)
+        # White rounded pill background
+        cd.rounded_rectangle([(0, 0), (card_w, card_h)],
+                             radius=32, fill=(255, 255, 255, 255))
+        # "Get / Try" small label
+        kicker_font = _load_font(24, weight="bold")
+        kicker = "GET THE APP"
+        kbb = cd.textbbox((0, 0), kicker, font=kicker_font)
+        kw_ = kbb[2] - kbb[0]
+        cd.text(((card_w - kw_) // 2, 32), kicker,
+                font=kicker_font, fill=(180, 80, 100, 255))
+        # Big app name in coral
+        name_font = _load_font(64, weight="xbold")
+        # Auto-shrink long names
+        while name_font.size > 40:
+            nbb = cd.textbbox((0, 0), display, font=name_font)
+            if (nbb[2] - nbb[0]) <= card_w - 80:
+                break
+            name_font = _load_font(name_font.size - 4, weight="xbold")
+        nbb = cd.textbbox((0, 0), display, font=name_font)
+        nw_ = nbb[2] - nbb[0]
+        cd.text(((card_w - nw_) // 2, 72), display,
+                font=name_font, fill=CTA_BG)
+        # Optional link/handle line if app_name was a URL or @handle
+        if app_name != display:
+            sub_font = _load_font(20, weight="regular")
+            sub = app_name if len(app_name) <= 36 else app_name[:33] + "…"
+            sbb = cd.textbbox((0, 0), sub, font=sub_font)
+            sw_ = sbb[2] - sbb[0]
+            cd.text(((card_w - sw_) // 2, card_h - 36), sub,
+                    font=sub_font, fill=(120, 60, 80, 200))
 
     # ---- Center the whole group (text + 32px gap + card) vertically ----
     GAP = 56

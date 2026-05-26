@@ -177,7 +177,13 @@ def _pick_hashtags(recipe: dict) -> list[str]:
     return tags[:12]
 
 
-_CTA_CAPTION = [
+_CTA_CAPTION_GENERIC = [
+    "Save this carousel before you scroll on.",
+    "Like → Share → Bookmark.",
+    "Comes back when you need it.",
+]
+
+_CTA_CAPTION_RECIPEVAULT = [
     "Here's the trick for saving recipes:",
     "Like > Share > RecipeVault.",
     "That's all it takes to keep the full recipe.",
@@ -185,20 +191,74 @@ _CTA_CAPTION = [
 
 
 def build_caption(recipe: dict) -> str:
+    """Caption builder. The "Ingredients:" dump + RecipeVault CTA is only used
+    when the recipe explicitly came from a RecipeVault brief (title or short
+    pitch mentions it). Otherwise we emit a clean generic post — title +
+    pitch + neutral save prompt + hashtags — with an option to swap in an
+    app/link CTA if the user's pitch contains one.
+    """
+    import re as _re
+
     title = recipe.get("title", "Recipe")
     pitch = recipe.get("short_pitch", "")
     ingredients = recipe.get("ingredients", [])
     hashtags = " ".join(_pick_hashtags(recipe))
 
+    # Detect "this is a RecipeVault-flavoured post" — checks both the title
+    # and the short pitch (which is closest to the user's original brief).
+    blob = f"{title} {pitch}".lower()
+    is_recipevault = "recipevault" in blob
+
+    # Detect a user-supplied app link / @handle / bare app name in either
+    # the pitch or the title. We check URL → @handle → "promo for <Name>".
+    blob_for_match = f"{title} {pitch}"
+    app_mention = None
+    m = _re.search(r"(https?://[^\s)\]\}>,;'\"]+)", blob_for_match)
+    if m:
+        app_mention = m.group(1)
+    else:
+        m = _re.search(r"(@[\w.\-]+)", blob_for_match)
+        if m:
+            app_mention = m.group(1)
+        else:
+            KEYWORDS = (
+                "promo for", "promo by", "promoting", "promote",
+                "push for", "advert for", "sponsored by", "sponsoring",
+                "shoutout for", "shoutout to",
+            )
+            blob_lc = blob_for_match.lower()
+            for kw in KEYWORDS:
+                idx = blob_lc.find(kw)
+                if idx < 0:
+                    continue
+                rest = blob_for_match[idx + len(kw):].lstrip(" -:—")
+                mm = _re.match(r"([A-Z][\w.\-]{1,30})", rest)
+                if mm:
+                    app_mention = mm.group(1)
+                    break
+
     lines = [title]
     if pitch:
         lines.append(pitch)
     lines.append("")
-    lines.append("Ingredients:")
-    for i in ingredients:
-        lines.append(f"- {i}")
-    lines.append("")
-    lines += _CTA_CAPTION
+
+    if is_recipevault:
+        # Legacy recipe-dump format — only when it's an actual RecipeVault post
+        lines.append("Ingredients:")
+        for i in ingredients:
+            lines.append(f"- {i}")
+        lines.append("")
+        lines += _CTA_CAPTION_RECIPEVAULT
+    elif app_mention:
+        # Personalised CTA mentioning the user's app/link
+        lines += [
+            "Want more like this?",
+            f"Check out {app_mention}",
+            "Save this so future-you doesn't have to search.",
+        ]
+    else:
+        lines += _CTA_CAPTION_GENERIC
+
     lines.append("")
     lines.append(hashtags)
     return "\n".join(lines)

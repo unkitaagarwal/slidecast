@@ -67,10 +67,10 @@ def run_one_recipe(brief: str, *, image_quality: str = "medium",
             print(f"  [progress_cb] swallowed: {_e}")
 
     print(f"\n=== {brief} ===")
-    _emit("Drafting recipe + slide plan with Gemini…")
+    _emit("Sketching out your 10-slide story…")
     recipe = generate_recipe(brief)
     print(f"  -> {recipe.slug}: {recipe.title}")
-    _emit(f"Got recipe spec: {recipe.title}")
+    _emit(f"Story plan ready: {recipe.title}")
 
     rdir = os.path.join(OUTPUT_ROOT, recipe.slug)
     raw_dir = os.path.join(rdir, "raw")
@@ -102,7 +102,7 @@ def run_one_recipe(brief: str, *, image_quality: str = "medium",
     total = len(recipe.slides)
     default_workers = "2" if os.environ.get("RENDER") else "4"
     image_workers = max(1, min(total, int(os.environ.get("IMAGE_GEN_WORKERS", default_workers))))
-    _emit(f"Generating {total} slides (image + composite, {image_workers} at a time)…")
+    _emit(f"Painting {total} slides in parallel — hold tight…")
     done_count = 0
     with ThreadPoolExecutor(max_workers=image_workers) as pool:
         futures = {pool.submit(_do_one, s): s for s in recipe.slides}
@@ -112,10 +112,10 @@ def run_one_recipe(brief: str, *, image_quality: str = "medium",
             try:
                 p = f.result()
                 print(f"  [{slide.index:02d}] {slide.caption}  -> {os.path.basename(p)}")
-                _emit(f"Slide {done_count}/{total} done — {slide.caption}")
+                _emit(f"Slide {done_count}/{total} ready — {slide.caption}")
             except Exception as e:  # noqa: BLE001
                 print(f"  [{slide.index:02d}] FAILED: {e}")
-                _emit(f"Slide {done_count}/{total} failed: {e}")
+                _emit(f"Slide {done_count}/{total} had a hiccup — continuing")
     return rdir
 
 

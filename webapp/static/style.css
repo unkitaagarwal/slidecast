@@ -650,6 +650,26 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
   pointer-events: none;
 }
 
+.prompt-hint {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-top: 12px; padding: 10px 14px;
+  background: rgba(244, 196, 122, 0.06);
+  border: 1px solid rgba(244, 196, 122, 0.18);
+  border-radius: var(--radius);
+  color: var(--ink-dim);
+  font-size: 13px; line-height: 1.5;
+}
+.prompt-hint svg {
+  flex-shrink: 0;
+  color: var(--gold);
+  margin-top: 2px;
+}
+.prompt-hint em {
+  color: var(--ink-2);
+  font-style: italic;
+  font-weight: 500;
+}
+
 .prompt-dialog-actions-row {
   display: flex; align-items: center; gap: 10px;
   margin-top: 14px;
