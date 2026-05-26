@@ -66,6 +66,7 @@ from compositor_compilation import (  # noqa: E402
     composite_photo,
     composite_recipe_page,
     composite_cta,
+    _is_food_item,  # used to pick the slide template
 )
 
 
@@ -192,52 +193,91 @@ def run_one_compilation(theme: str, progress_cb=None) -> str:
                     print(f"  RAW TIMEOUT {n}: image took >{_IMAGE_TIMEOUT}s — skipping")
             _emit("Visuals took a bit too long — using what's ready")
 
-    # ---- Step 2: composite 12 slides ----
-    print("  compositing slides...")
-    _emit("Stitching everything into your final slides…")
+    # ---- Step 2: composite slides — template depends on domain --------------
+    # FOOD compilations get the classic 12-slide cookbook layout: alternating
+    # photo + recipe-page spreads work well for cooking content, where the
+    # hero shot and the ingredient/instructions page tell a different part of
+    # the story. NON-FOOD compilations (fitness, finance, productivity,
+    # lifestyle, fashion, …) get a tighter 7-slide layout where each item is a
+    # single combined slide (hero photo embedded at the top of the OVERVIEW +
+    # KEY POINTS page). That's denser, fits Instagram's 5-8 optimal sweet
+    # spot, and avoids the awkward "decorative photo with no context" slides
+    # that food-style alternation produces for non-food briefs.
+    is_food_compilation = any(_is_food_item(r.__dict__) for r in comp.recipes)
+    cta_app_name, cta_is_recipevault = _detect_cta_context(theme)
 
-    def _compose(label, fn, *args):
-        fn(*args)
+    print("  compositing slides...")
+    if is_food_compilation:
+        _emit("Stitching everything into your 12-slide cookbook…")
+    else:
+        _emit("Stitching everything into your 7-slide listicle…")
+
+    def _compose(label, fn, *args, **kwargs):
+        fn(*args, **kwargs)
         _emit(f"Slide {label} ready")
 
-    _compose("1/12 hook", composite_hook, raw_paths["hook"], comp.hook_caption,
-             os.path.join(slides_dir, "01_hook.png"))
+    if is_food_compilation:
+        # ---- FOOD: 12-slide cookbook layout ---------------------------------
+        # 01 hook
+        # 02-05 items 1-2 (photo + page)
+        # 06 mid-carousel CTA
+        # 07-12 items 3-5 (photo + page)
+        _compose("1/12 hook", composite_hook, raw_paths["hook"], comp.hook_caption,
+                 os.path.join(slides_dir, "01_hook.png"))
 
-    # Recipes 1 & 2 (photo + page)
-    _compose("2/12 recipe 1 photo", composite_photo, raw_paths["hero1"], comp.recipes[0].title,
-             os.path.join(slides_dir, "02_recipe1_photo.png"))
-    _compose("3/12 recipe 1 page", composite_recipe_page, comp.recipes[0].__dict__,
-             os.path.join(slides_dir, "03_recipe1_page.png"))
-    _compose("4/12 recipe 2 photo", composite_photo, raw_paths["hero2"], comp.recipes[1].title,
-             os.path.join(slides_dir, "04_recipe2_photo.png"))
-    _compose("5/12 recipe 2 page", composite_recipe_page, comp.recipes[1].__dict__,
-             os.path.join(slides_dir, "05_recipe2_page.png"))
+        _compose("2/12 recipe 1 photo", composite_photo, raw_paths["hero1"],
+                 comp.recipes[0].title, os.path.join(slides_dir, "02_recipe1_photo.png"))
+        _compose("3/12 recipe 1 page", composite_recipe_page, comp.recipes[0].__dict__,
+                 os.path.join(slides_dir, "03_recipe1_page.png"))
+        _compose("4/12 recipe 2 photo", composite_photo, raw_paths["hero2"],
+                 comp.recipes[1].title, os.path.join(slides_dir, "04_recipe2_photo.png"))
+        _compose("5/12 recipe 2 page", composite_recipe_page, comp.recipes[1].__dict__,
+                 os.path.join(slides_dir, "05_recipe2_page.png"))
 
-    # Mid-carousel CTA — detect promotional context from the user's theme
-    # so we render the right card: RecipeVault static image vs. user-supplied
-    # app pill vs. nothing.
-    cta_app_name, cta_is_recipevault = _detect_cta_context(theme)
-    composite_cta(
-        comp.cta_caption,
-        os.path.join(slides_dir, "06_cta.png"),
-        app_name=cta_app_name,
-        is_recipevault=cta_is_recipevault,
-    )
-    _emit("Slide 6/12 CTA ready")
+        composite_cta(
+            comp.cta_caption, os.path.join(slides_dir, "06_cta.png"),
+            app_name=cta_app_name, is_recipevault=cta_is_recipevault,
+        )
+        _emit("Slide 6/12 CTA ready")
 
-    # Recipes 3, 4, 5
-    _compose("7/12 recipe 3 photo", composite_photo, raw_paths["hero3"], comp.recipes[2].title,
-             os.path.join(slides_dir, "07_recipe3_photo.png"))
-    _compose("8/12 recipe 3 page", composite_recipe_page, comp.recipes[2].__dict__,
-             os.path.join(slides_dir, "08_recipe3_page.png"))
-    _compose("9/12 recipe 4 photo", composite_photo, raw_paths["hero4"], comp.recipes[3].title,
-             os.path.join(slides_dir, "09_recipe4_photo.png"))
-    _compose("10/12 recipe 4 page", composite_recipe_page, comp.recipes[3].__dict__,
-             os.path.join(slides_dir, "10_recipe4_page.png"))
-    _compose("11/12 recipe 5 photo", composite_photo, raw_paths["hero5"], comp.recipes[4].title,
-             os.path.join(slides_dir, "11_recipe5_photo.png"))
-    _compose("12/12 recipe 5 page", composite_recipe_page, comp.recipes[4].__dict__,
-             os.path.join(slides_dir, "12_recipe5_page.png"))
+        _compose("7/12 recipe 3 photo", composite_photo, raw_paths["hero3"],
+                 comp.recipes[2].title, os.path.join(slides_dir, "07_recipe3_photo.png"))
+        _compose("8/12 recipe 3 page", composite_recipe_page, comp.recipes[2].__dict__,
+                 os.path.join(slides_dir, "08_recipe3_page.png"))
+        _compose("9/12 recipe 4 photo", composite_photo, raw_paths["hero4"],
+                 comp.recipes[3].title, os.path.join(slides_dir, "09_recipe4_photo.png"))
+        _compose("10/12 recipe 4 page", composite_recipe_page, comp.recipes[3].__dict__,
+                 os.path.join(slides_dir, "10_recipe4_page.png"))
+        _compose("11/12 recipe 5 photo", composite_photo, raw_paths["hero5"],
+                 comp.recipes[4].title, os.path.join(slides_dir, "11_recipe5_photo.png"))
+        _compose("12/12 recipe 5 page", composite_recipe_page, comp.recipes[4].__dict__,
+                 os.path.join(slides_dir, "12_recipe5_page.png"))
+
+    else:
+        # ---- NON-FOOD: 7-slide consolidated listicle layout -----------------
+        # 01 hook (full-bleed image + headline)
+        # 02-06 items 1-5 (each = hero photo embedded at top of OVERVIEW+KEY POINTS page)
+        # 07 final CTA
+        _compose("1/7 cover", composite_hook, raw_paths["hook"], comp.hook_caption,
+                 os.path.join(slides_dir, "01_hook.png"))
+
+        for i, recipe in enumerate(comp.recipes, start=1):
+            hero_path = raw_paths.get(f"hero{i}", "")
+            slide_idx = i + 1  # slides 02-06
+            _compose(
+                f"{slide_idx}/7 item {i}",
+                composite_recipe_page,
+                recipe.__dict__,
+                os.path.join(slides_dir, f"{slide_idx:02d}_item{i}.png"),
+                top_photo_path=hero_path,
+                photo_height=520,
+            )
+
+        composite_cta(
+            comp.cta_caption, os.path.join(slides_dir, "07_cta.png"),
+            app_name=cta_app_name, is_recipevault=cta_is_recipevault,
+        )
+        _emit("Slide 7/7 CTA ready")
 
     print(f"  DONE -> {cdir}")
     return cdir
