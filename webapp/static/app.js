@@ -358,10 +358,38 @@
   function openLightbox(url) {
     const lb = document.createElement('div');
     lb.className = 'lightbox';
+
     const img = document.createElement('img');
     img.src = url;
+    img.alt = 'Slide preview';
+    // Clicking the image itself shouldn't dismiss — users often want to
+    // long-press / save / copy. Only the backdrop and X dismiss.
+    img.addEventListener('click', (e) => e.stopPropagation());
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'lightbox-close';
+    closeBtn.setAttribute('aria-label', 'Close preview');
+    closeBtn.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </svg>
+    `;
+
+    function dismiss() {
+      lb.remove();
+      document.removeEventListener('keydown', onKey);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') dismiss();
+    }
+    closeBtn.addEventListener('click', (e) => { e.stopPropagation(); dismiss(); });
+    lb.addEventListener('click', dismiss);
+    document.addEventListener('keydown', onKey);
+
     lb.appendChild(img);
-    lb.addEventListener('click', () => lb.remove());
+    lb.appendChild(closeBtn);
     document.body.appendChild(lb);
   }
 
