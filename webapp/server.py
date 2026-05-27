@@ -928,6 +928,13 @@ from pydantic import BaseModel
 
 app = FastAPI(title="Slidecast Studio")
 
+# Limit concurrent outbound uploads to Postiz so bulk-scheduling multiple
+# slideshows at once doesn't exhaust the thread pool and cause "Failed to fetch"
+# on the second (and subsequent) slideshows. 5 concurrent uploads is enough
+# throughput while keeping the server responsive.
+import asyncio as _asyncio
+_UPLOAD_SEMAPHORE = _asyncio.Semaphore(5)
+
 
 @app.exception_handler(ClientDisconnect)
 async def _client_disconnect_handler(request: Request, exc: ClientDisconnect):
@@ -2383,8 +2390,11 @@ async def api_upload(request: Request):
     auth = request.headers.get("Authorization", "")
     ct   = request.headers.get("Content-Type", "application/json")
     body = await _read_request_body(request)
-    # Sync urllib call → run off the event loop so other uploads can progress
-    result = await run_in_threadpool(_postiz_proxy_post, "/upload", auth, body, ct)
+    # Semaphore caps concurrent Postiz uploads at 5 — prevents thread-pool
+    # exhaustion when the bulk scheduler fires multiple slideshows at once,
+    # which otherwise causes "Failed to fetch" on the second slideshow.
+    async with _UPLOAD_SEMAPHORE:
+        result = await run_in_threadpool(_postiz_proxy_post, "/upload", auth, body, ct)
     del body
     return result
 
