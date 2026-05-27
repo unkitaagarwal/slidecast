@@ -1218,6 +1218,24 @@ def _plan_to_price_id(plan: str) -> Optional[str]:
     return None
 
 
+def _price_id_to_plan(price_id: str) -> str:
+    """Best-effort reverse map from Stripe price id to plan name."""
+    pid = (price_id or "").strip()
+    if not pid:
+        return ""
+    if pid in {
+        os.environ.get("STRIPE_PRICE_BASIC", "").strip(),
+        os.environ.get("STRIPE_PRICE_ID_BASIC", "").strip(),
+    }:
+        return "basic"
+    if pid in {
+        os.environ.get("STRIPE_PRICE_PRO", "").strip(),
+        os.environ.get("STRIPE_PRICE_ID_PRO", "").strip(),
+    }:
+        return "pro"
+    return ""
+
+
 def _public_base_url(request: Request) -> str:
     """Resolve the public-facing origin for Stripe redirect URLs."""
     explicit = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
@@ -1303,6 +1321,20 @@ def _set_user_plan(email: str, plan: str, status: str,
         print(f"  [stripe] failed to update Firestore for {email}: {e}")
 
 
+def _stripe_to_dict(obj) -> dict:
+    """Normalize Stripe SDK objects to plain dicts for webhook handling."""
+    if obj is None:
+        return {}
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    try:
+        return dict(obj)
+    except Exception:
+        return {}
+
+
 @app.post("/api/stripe/webhook")
 async def api_stripe_webhook(request: Request):
     """Receive Stripe webhook events and flip user plan/status in Firestore."""
@@ -1317,7 +1349,11 @@ async def api_stripe_webhook(request: Request):
 
     try:
         if webhook_secret:
-            event = stripe.Webhook.construct_event(payload, sig, webhook_secret)
+            # construct_event returns a Stripe Event object, not a dict — .get()
+            # raises AttributeError. Convert after signature verification.
+            event = _stripe_to_dict(
+                stripe.Webhook.construct_event(payload, sig, webhook_secret)
+            )
         else:
             # Dev fallback: parse without signature verification. NEVER use this
             # in production — anyone could POST a fake "completed" event.
@@ -1327,23 +1363,59 @@ async def api_stripe_webhook(request: Request):
         raise HTTPException(400, f"Webhook signature verification failed: {e}")
 
     etype = event.get("type")
-    obj   = event.get("data", {}).get("object", {}) or {}
+    obj   = _stripe_to_dict(event.get("data", {}).get("object"))
 
     if etype == "checkout.session.completed":
+        meta = _stripe_to_dict(obj.get("metadata"))
         email = (obj.get("customer_email")
                  or obj.get("client_reference_id")
-                 or (obj.get("metadata") or {}).get("email") or "").strip().lower()
-        plan  = ((obj.get("metadata") or {}).get("plan") or "").strip().lower()
+                 or meta.get("email") or "").strip().lower()
+        plan  = (meta.get("plan") or "").strip().lower()
         cust  = obj.get("customer") or None
+        sub_id = obj.get("subscription") or None
+
+        # Some Stripe events can arrive without metadata propagated the way we
+        # expect. Fallback: derive plan from subscription metadata/price id.
+        if not plan and sub_id:
+            try:
+                sub = _stripe_to_dict(
+                    await run_in_threadpool(stripe.Subscription.retrieve, sub_id)
+                )
+                sub_meta = _stripe_to_dict(sub.get("metadata"))
+                plan = (sub_meta.get("plan") or "").strip().lower()
+                if not plan:
+                    items = _stripe_to_dict(sub.get("items")).get("data", []) or []
+                    if items:
+                        price_id = _stripe_to_dict(items[0].get("price")).get("id", "")
+                        plan = _price_id_to_plan(price_id)
+            except Exception as _e:
+                print(f"  [stripe webhook] failed to resolve plan from subscription {sub_id}: {_e}")
+
+        # Fallback: if customer_email is absent, fetch customer and use that email.
+        if not email and cust:
+            try:
+                cust_obj = _stripe_to_dict(
+                    await run_in_threadpool(stripe.Customer.retrieve, cust)
+                )
+                email = (cust_obj.get("email") or "").strip().lower()
+            except Exception as _e:
+                print(f"  [stripe webhook] failed to resolve email from customer {cust}: {_e}")
+
         if email and plan:
             _set_user_plan(email, plan, "active", stripe_customer_id=cust)
+        else:
+            print(f"  [stripe webhook] checkout.session.completed missing email/plan: "
+                  f"email={email!r} plan={plan!r} customer={cust!r} subscription={sub_id!r}")
 
     elif etype in ("customer.subscription.deleted", "customer.subscription.canceled"):
         # Look up the customer's email via Stripe to find the right Firestore doc
         cust_id = obj.get("customer")
-        plan = ((obj.get("metadata") or {}).get("plan") or "").strip().lower()
+        meta = _stripe_to_dict(obj.get("metadata"))
+        plan = (meta.get("plan") or "").strip().lower()
         try:
-            cust = await run_in_threadpool(stripe.Customer.retrieve, cust_id)
+            cust = _stripe_to_dict(
+                await run_in_threadpool(stripe.Customer.retrieve, cust_id)
+            )
             email = (cust.get("email") or "").strip().lower()
         except Exception:
             email = ""
@@ -1354,7 +1426,9 @@ async def api_stripe_webhook(request: Request):
         # Optional: flip status to past_due so UI can show a banner
         cust_id = obj.get("customer")
         try:
-            cust = await run_in_threadpool(stripe.Customer.retrieve, cust_id)
+            cust = _stripe_to_dict(
+                await run_in_threadpool(stripe.Customer.retrieve, cust_id)
+            )
             email = (cust.get("email") or "").strip().lower()
         except Exception:
             email = ""
