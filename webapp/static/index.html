@@ -435,7 +435,10 @@
     '.tk-act', '.rail-arrow',
   ].join(',');
 
-  let hasPlan = false; // will be set once Firebase resolves
+  let hasPlan = false;     // true only when signed-in AND plan is active
+  // (Note: we read auth.currentUser synchronously to detect "signed in"
+  // because a cached isSignedIn boolean races with Firebase's async
+  // onAuthStateChanged callback on page load.)
 
   // Toast shown when user tries to interact without a plan
   function showGateToast() {
@@ -473,7 +476,7 @@
 
   // Intercept clicks on gated elements
   document.addEventListener('click', e => {
-    if (hasPlan) return; // signed in with plan — allow everything
+    if (hasPlan) return; // signed in with active plan — allow everything
     // Always allow nav user slot (Sign in / Sign up button)
     if (e.target.closest('#nav-user-slot')) return;
     // Always allow plain links (nav anchors, pricing, etc.)
@@ -482,6 +485,23 @@
     if (!target) return;
     e.preventDefault();
     e.stopImmediatePropagation();
+    // Treat the user as "not signed in" if EITHER Firebase has no current
+    // user OR our own sc_user localStorage flag is missing an email. Two
+    // signals catches edge cases:
+    //   - Firebase IndexedDB session persists but the user logged out by
+    //     clearing localStorage manually  → sc_user is empty → redirect.
+    //   - A new Incognito visitor                              → both empty.
+    //   - Signed in normally via /auth                         → both set.
+    const stored = JSON.parse(localStorage.getItem('sc_user') || '{}');
+    const isSignedIn = !!(auth.currentUser && stored.email);
+    if (!isSignedIn) {
+      // Not signed in — send straight to signup. Carry the current path
+      // so the auth flow can bring the user back here after they sign up.
+      const returnTo = encodeURIComponent(window.location.pathname + window.location.hash);
+      window.location.href = `/auth?redirect=${returnTo}`;
+      return;
+    }
+    // Signed in but no plan — the existing "Choose a plan" toast applies
     showGateToast();
   }, true); // capture phase so it fires before app.js handlers
 
