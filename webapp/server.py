@@ -1157,6 +1157,213 @@ def api_admin_health():
     }
 
 
+# ---------------------------------------------------------------------------
+# Stripe checkout + webhook
+# ---------------------------------------------------------------------------
+#
+# Flow:
+#   1. User clicks "Get Basic" / "Get Pro" on /pricing → JS POSTs
+#      {email, plan} to /api/create-checkout-session.
+#   2. We create a Stripe Checkout Session with the corresponding price ID
+#      and a customer_email pre-filled. Stripe redirects the user to its
+#      hosted checkout page. After they pay, Stripe redirects to /success.
+#   3. In parallel, Stripe POSTs a checkout.session.completed event to
+#      /api/stripe/webhook. We verify the signature, then write
+#      plan + status="active" + stripe_customer_id onto the user's Firestore
+#      doc (keyed by email). The frontend's firebase-nav.js reads that
+#      Firestore doc to decide hasPlan.
+#   4. On subscription cancellation (customer.subscription.deleted), we flip
+#      status back to "canceled" so the user loses access.
+#
+# Required env vars (set in Render → Environment):
+#   STRIPE_SECRET_KEY        sk_live_... or sk_test_...
+#   STRIPE_WEBHOOK_SECRET    whsec_... (from the webhook endpoint in Stripe dashboard)
+#   STRIPE_PRICE_BASIC       price_... for the $29.99/mo basic recurring price
+#   STRIPE_PRICE_PRO         price_... for the $69.99/mo pro recurring price
+#   PUBLIC_BASE_URL          e.g. "https://theslidecast.com" (used for
+#                            success_url + cancel_url). Falls back to the
+#                            request's origin if unset.
+#
+# The endpoint returns 503 with a friendly message if STRIPE_SECRET_KEY is
+# unset, so the pricing page degrades gracefully instead of looking broken.
+
+def _stripe_module():
+    """Lazy-import stripe — only loaded when checkout is actually invoked."""
+    import stripe as _stripe
+    key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
+    if not key:
+        return None
+    _stripe.api_key = key
+    return _stripe
+
+
+def _plan_to_price_id(plan: str) -> Optional[str]:
+    """Map "basic"/"pro" → Stripe price ID.
+
+    Accepts two env var conventions for each plan so .env / Render config can
+    use whichever feels natural:
+        STRIPE_PRICE_BASIC      or   STRIPE_PRICE_ID_BASIC
+        STRIPE_PRICE_PRO        or   STRIPE_PRICE_ID_PRO
+    First non-empty match wins. Returns None when nothing's configured.
+    """
+    plan = (plan or "").strip().lower()
+    if plan == "basic":
+        return (os.environ.get("STRIPE_PRICE_BASIC", "").strip()
+                or os.environ.get("STRIPE_PRICE_ID_BASIC", "").strip()
+                or None)
+    if plan == "pro":
+        return (os.environ.get("STRIPE_PRICE_PRO", "").strip()
+                or os.environ.get("STRIPE_PRICE_ID_PRO", "").strip()
+                or None)
+    return None
+
+
+def _public_base_url(request: Request) -> str:
+    """Resolve the public-facing origin for Stripe redirect URLs."""
+    explicit = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    # Best-effort fallback — uses the Host header sent by the browser
+    scheme = request.url.scheme
+    host = request.headers.get("host", "")
+    return f"{scheme}://{host}" if host else "https://theslidecast.com"
+
+
+@app.post("/api/create-checkout-session")
+async def api_create_checkout_session(request: Request):
+    """Create a Stripe Checkout Session for Basic or Pro subscription."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+    email = (body.get("email") or "").strip().lower()
+    plan  = (body.get("plan") or "").strip().lower()
+
+    if not email or "@" not in email:
+        raise HTTPException(400, "A valid email is required")
+    price_id = _plan_to_price_id(plan)
+    if not price_id:
+        raise HTTPException(
+            400,
+            "Plan not recognized. Make sure STRIPE_PRICE_BASIC and "
+            "STRIPE_PRICE_PRO are set in the server environment.",
+        )
+
+    stripe = _stripe_module()
+    if stripe is None:
+        # Stripe key missing — degrade with a clear message instead of 500
+        raise HTTPException(
+            503,
+            "Checkout is being set up. Please email us to get early access.",
+        )
+
+    base = _public_base_url(request)
+    try:
+        session = await run_in_threadpool(
+            stripe.checkout.Session.create,
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            customer_email=email,
+            success_url=f"{base}/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{base}/pricing?canceled=1",
+            allow_promotion_codes=True,
+            client_reference_id=email,
+            metadata={"plan": plan, "email": email},
+            subscription_data={"metadata": {"plan": plan, "email": email}},
+        )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(502, f"Stripe error: {e}")
+
+    return {"url": session.url, "id": session.id}
+
+
+def _set_user_plan(email: str, plan: str, status: str,
+                   stripe_customer_id: Optional[str] = None) -> None:
+    """Write plan + status onto the user's Firestore doc, keyed by email."""
+    try:
+        fa = _firebase_admin_init()
+        if fa is None:
+            print(f"  [stripe] firebase-admin unavailable — can't update plan for {email}")
+            return
+        from firebase_admin import firestore as _fa_fs
+        db = _fa_fs.client()
+        doc_ref = db.collection("users").document(email)
+        update = {
+            "plan":      plan,
+            "status":    status,
+            "updated_at": time.time(),
+        }
+        if stripe_customer_id:
+            update["stripe_customer_id"] = stripe_customer_id
+        doc_ref.set(update, merge=True)
+        print(f"  [stripe] users/{email} → plan={plan} status={status}")
+    except Exception as e:
+        traceback.print_exc()
+        print(f"  [stripe] failed to update Firestore for {email}: {e}")
+
+
+@app.post("/api/stripe/webhook")
+async def api_stripe_webhook(request: Request):
+    """Receive Stripe webhook events and flip user plan/status in Firestore."""
+    stripe = _stripe_module()
+    if stripe is None:
+        # No Stripe configured — accept and discard so Stripe doesn't retry
+        return {"ignored": "stripe-not-configured"}
+
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+
+    try:
+        if webhook_secret:
+            event = stripe.Webhook.construct_event(payload, sig, webhook_secret)
+        else:
+            # Dev fallback: parse without signature verification. NEVER use this
+            # in production — anyone could POST a fake "completed" event.
+            event = json.loads(payload)
+            print("  [stripe webhook] WARNING: signature not verified (STRIPE_WEBHOOK_SECRET unset)")
+    except Exception as e:
+        raise HTTPException(400, f"Webhook signature verification failed: {e}")
+
+    etype = event.get("type")
+    obj   = event.get("data", {}).get("object", {}) or {}
+
+    if etype == "checkout.session.completed":
+        email = (obj.get("customer_email")
+                 or obj.get("client_reference_id")
+                 or (obj.get("metadata") or {}).get("email") or "").strip().lower()
+        plan  = ((obj.get("metadata") or {}).get("plan") or "").strip().lower()
+        cust  = obj.get("customer") or None
+        if email and plan:
+            _set_user_plan(email, plan, "active", stripe_customer_id=cust)
+
+    elif etype in ("customer.subscription.deleted", "customer.subscription.canceled"):
+        # Look up the customer's email via Stripe to find the right Firestore doc
+        cust_id = obj.get("customer")
+        plan = ((obj.get("metadata") or {}).get("plan") or "").strip().lower()
+        try:
+            cust = await run_in_threadpool(stripe.Customer.retrieve, cust_id)
+            email = (cust.get("email") or "").strip().lower()
+        except Exception:
+            email = ""
+        if email:
+            _set_user_plan(email, plan or "", "canceled")
+
+    elif etype == "invoice.payment_failed":
+        # Optional: flip status to past_due so UI can show a banner
+        cust_id = obj.get("customer")
+        try:
+            cust = await run_in_threadpool(stripe.Customer.retrieve, cust_id)
+            email = (cust.get("email") or "").strip().lower()
+        except Exception:
+            email = ""
+        if email:
+            _set_user_plan(email, "", "past_due")
+
+    return {"received": True, "type": etype}
+
+
 @app.get("/api/branding")
 def api_branding():
     """Brand-config endpoint. Frontend reads this on load to populate the
@@ -2737,6 +2944,17 @@ def auth_page():
 @app.get("/pricing")
 def pricing_page():
     return _serve_html("pricing.html")
+
+
+@app.get("/success")
+def success_page():
+    """Stripe redirects here after a completed Checkout session.
+
+    The page shows a confirmation, waits for the webhook to propagate the
+    plan flip in Firestore, and offers a CTA back to /. The actual ?session_id
+    query param is informational — we don't trust it for entitlement (the
+    webhook is the source of truth)."""
+    return _serve_html("success.html")
 
 
 # Static asset mount (CSS, JS, etc.)

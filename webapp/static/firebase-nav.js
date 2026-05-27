@@ -69,7 +69,10 @@ function attachLogout(slot) {
   btn.onclick = async () => {
     await signOut(auth);
     localStorage.removeItem("sc_user");
-    renderSignedOut();
+    // Hard-navigate to home so any in-flight job state, generated slides,
+    // library cache, and DOM mutations from app.js fully reset. Without this,
+    // the previous user's generated panel could linger after sign-out.
+    window.location.href = "/";
   };
 }
 
@@ -111,16 +114,20 @@ async function renderUser(user) {
       plan:  planName,
     }));
 
-    if (planName) {
-      renderUserSlot(user.email, planName);
-    } else {
-      // No active plan — show sign-in button so they can pick a plan
-      renderSignedOut();
-    }
+    // Always show the signed-in nav (email + Logout) when a Firebase user
+    // exists. Previously we'd render the "Sign in / Sign up" button when
+    // planName was empty, which was wrong: it makes a fully signed-in user
+    // look signed out (happened post-Stripe-checkout before the webhook had
+    // landed). The "no plan" state is now handled by the gate logic on
+    // protected actions — it routes the user to /pricing if they try to do
+    // something gated. The nav itself should faithfully reflect auth state.
+    renderUserSlot(user.email, planName || "no plan");
   } catch (e) {
-    // Firestore unavailable — keep whatever we rendered from cache
+    // Firestore unavailable — render the user from auth + cache so the nav
+    // still shows them as signed in. Plan label falls back to cached value
+    // or "no plan" if neither source has it yet.
     console.warn("firebase-nav Firestore:", e);
-    if (!cached.plan) renderSignedOut();
+    renderUserSlot(user.email, cached.plan || "no plan");
   }
 }
 

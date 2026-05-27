@@ -379,6 +379,10 @@ const firebaseConfig = {
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
+// Expose to the non-module startCheckout() handler at the bottom of this file
+// so it can synchronously check whether the user is signed in to Firebase
+// before kicking off a Stripe Checkout session.
+window.fbAuth = auth;
 
 onAuthStateChanged(auth, async user => {
   const nav = document.getElementById("navRight");
@@ -453,6 +457,20 @@ async function startCheckout(plan, emailId, errId, btnId) {
     return;
   }
 
+  // GATE: Firebase sign-in must be in place before checkout. Otherwise the
+  // user comes back from Stripe with no auth session and the home page shows
+  // "Sign in / Sign up" in the nav. Save the plan choice so we can resume
+  // the checkout flow immediately after they sign in.
+  if (!window.fbAuth || !window.fbAuth.currentUser) {
+    try {
+      sessionStorage.setItem("sc_pending_checkout", JSON.stringify({
+        plan, email, t: Date.now(),
+      }));
+    } catch (_) {}
+    window.location.href = "/auth?redirect=/pricing";
+    return;
+  }
+
   btn.classList.add("loading");
   btn.disabled = true;
 
@@ -480,6 +498,38 @@ document.getElementById("emailBasic").addEventListener("keydown", e => {
 document.getElementById("emailPro").addEventListener("keydown", e => {
   if (e.key === "Enter") startCheckout("pro","emailPro","errPro","btnPro");
 });
+
+// Auto-resume: if the user clicked Get Basic/Get Pro while signed out, we
+// stashed their plan choice in sessionStorage and bounced them to /auth.
+// Once auth completes and Firebase populates auth.currentUser, kick off the
+// Stripe checkout automatically so they don't have to click the button twice.
+(function resumePendingCheckout() {
+  let pending;
+  try { pending = JSON.parse(sessionStorage.getItem("sc_pending_checkout") || "null"); }
+  catch (_) { pending = null; }
+  if (!pending || !pending.plan) return;
+  // Expire stale entries (>10 min old) so we never auto-charge from a stale
+  // tab the user forgot they left open.
+  if (Date.now() - (pending.t || 0) > 10 * 60 * 1000) {
+    sessionStorage.removeItem("sc_pending_checkout");
+    return;
+  }
+  // Wait for Firebase to populate auth.currentUser (async on page load)
+  const start = Date.now();
+  const tick = setInterval(() => {
+    if (window.fbAuth && window.fbAuth.currentUser) {
+      clearInterval(tick);
+      sessionStorage.removeItem("sc_pending_checkout");
+      const ids = pending.plan === "pro"
+        ? ["emailPro",   "errPro",   "btnPro"]
+        : ["emailBasic", "errBasic", "btnBasic"];
+      startCheckout(pending.plan, ids[0], ids[1], ids[2]);
+    } else if (Date.now() - start > 6000) {
+      // Auth never resolved — give up cleanly so the user can re-try manually
+      clearInterval(tick);
+    }
+  }, 200);
+})();
 </script>
 </body>
 </html>
