@@ -933,7 +933,7 @@ app = FastAPI(title="Slidecast Studio")
 # on the second (and subsequent) slideshows. 5 concurrent uploads is enough
 # throughput while keeping the server responsive.
 import asyncio as _asyncio
-_UPLOAD_SEMAPHORE = _asyncio.Semaphore(5)
+_UPLOAD_SEMAPHORE = _asyncio.Semaphore(20)
 
 
 @app.exception_handler(ClientDisconnect)
