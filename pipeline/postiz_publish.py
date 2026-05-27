@@ -298,12 +298,6 @@ def publish_recipe(
         raise RuntimeError(f"no slide PNGs in {rdir}/slides")
 
     print(f"\n=== {recipe['title']} ({slug}) ===")
-    print(f"  uploading {len(slides)} slides ...")
-    media: list[dict] = []
-    for i, path in enumerate(slides, 1):
-        m = upload_image(path)
-        media.append({"id": m["id"], "path": m["path"]})
-        print(f"    [{i:02d}/{len(slides)}] {os.path.basename(path)} -> {m['path']}")
 
     # Prefer the stored caption baked into the JSON (so edits + viral-keyword
     # hashtags stick). Fall back to building one fresh if not present.
@@ -313,6 +307,16 @@ def publish_recipe(
 
     posts_payload = []
     for integ in integrations:
+        # Upload a fresh set of media for each integration — Postiz binds
+        # uploaded media IDs to a single post object, so reusing the same IDs
+        # across multiple integrations in one create_post call causes the
+        # second (and any subsequent) integration to fail silently.
+        print(f"  uploading {len(slides)} slides for {integ['name']} ...")
+        media: list[dict] = []
+        for i, path in enumerate(slides, 1):
+            m = upload_image(path)
+            media.append({"id": m["id"], "path": m["path"]})
+            print(f"    [{i:02d}/{len(slides)}] {os.path.basename(path)} -> {m['path']}")
         post_value = {"content": caption, "image": media}
         if integ["identifier"] == "tiktok":
             # UPLOAD mode = post lands in TikTok app's inbox/drafts where the

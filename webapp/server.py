@@ -415,27 +415,50 @@ def _postiz_proxy_get(endpoint: str, auth: str) -> Response:
 
 
 def _postiz_proxy_post(endpoint: str, auth: str, body: bytes, content_type: str) -> Response:
-    """Proxy a POST request to the Postiz public API with retry."""
+    """Proxy a POST request to the Postiz public API with retry.
+
+    Uses a fresh requests.Session per call so concurrent uploads from multiple
+    slideshows never share SSL connection state — sharing urllib connections
+    across threads causes SSLV3_ALERT_BAD_RECORD_MAC under load.
+    SSL errors get a longer backoff with jitter to avoid thundering-herd retries.
+    """
+    import requests as _requests
+    import ssl as _ssl
+    import random as _random_retry
+
     headers = {
         "Authorization": auth,
         "Content-Type":  content_type,
         "Accept":        "application/json",
     }
     last_exc = None
-    for attempt in range(3):
+    for attempt in range(4):
         try:
-            req = _urlreq.Request(f"{POSTIZ_API}{endpoint}", data=body,
-                                  headers=headers, method="POST")
-            with _urlreq.urlopen(req, timeout=120) as r:
-                resp_body = r.read()
-            return Response(content=resp_body, media_type="application/json")
-        except _urlerr.HTTPError as e:
-            return Response(content=e.read(), status_code=e.code, media_type="application/json")
+            # Fresh session per attempt — guarantees a clean SSL handshake
+            # with no shared state from other concurrent threads.
+            with _requests.Session() as session:
+                r = session.post(
+                    f"{POSTIZ_API}{endpoint}",
+                    data=body,
+                    headers=headers,
+                    timeout=120,
+                )
+            if r.status_code >= 400:
+                return Response(content=r.content, status_code=r.status_code,
+                                media_type="application/json")
+            return Response(content=r.content, media_type="application/json")
         except Exception as exc:
             last_exc = exc
-            if attempt < 2:
-                print(f"  [postiz retry {attempt+1}] {exc}")
-                time.sleep(2 ** attempt)
+            is_ssl = "SSL" in str(exc) or "ssl" in str(exc).lower()
+            if attempt < 3:
+                # SSL errors get longer backoff + jitter so concurrent retries
+                # don't all hammer Postiz at the same instant.
+                base_wait = (4 ** attempt) if is_ssl else (2 ** attempt)
+                jitter    = _random_retry.uniform(0, base_wait * 0.5)
+                wait      = base_wait + jitter
+                print(f"  [postiz retry {attempt+1}/3] {'SSL error' if is_ssl else str(exc)[:80]}"
+                      f" — retrying in {wait:.1f}s")
+                time.sleep(wait)
     raise HTTPException(500, str(last_exc))
 
 
