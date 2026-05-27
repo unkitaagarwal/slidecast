@@ -900,9 +900,25 @@ from fastapi.staticfiles import StaticFiles
 # synchronous urllib-based _postiz_proxy_post; without this, a single slow
 # upload blocks every other request and causes ClientDisconnect cascades.
 from starlette.concurrency import run_in_threadpool
+from starlette.requests import ClientDisconnect
 from pydantic import BaseModel
 
 app = FastAPI(title="Slidecast Studio")
+
+
+@app.exception_handler(ClientDisconnect)
+async def _client_disconnect_handler(request: Request, exc: ClientDisconnect):
+    """Browser/proxy closed the connection mid-upload — not a server bug."""
+    print(f"  [http] client disconnected during {request.method} {request.url.path}")
+    return Response(status_code=499, content="Client disconnected")
+
+
+async def _read_request_body(request: Request) -> bytes:
+    """Read full request body; map ClientDisconnect to a quiet 499."""
+    try:
+        return await request.body()
+    except ClientDisconnect:
+        raise HTTPException(499, "Client disconnected during upload")
 
 
 class GenerateBody(BaseModel):
@@ -2343,7 +2359,7 @@ async def api_upload(request: Request):
         raise HTTPException(413, f"File too large (max {_MAX_UPLOAD_BYTES//1024//1024} MB)")
     auth = request.headers.get("Authorization", "")
     ct   = request.headers.get("Content-Type", "application/json")
-    body = await request.body()
+    body = await _read_request_body(request)
     # Sync urllib call → run off the event loop so other uploads can progress
     result = await run_in_threadpool(_postiz_proxy_post, "/upload", auth, body, ct)
     del body
@@ -2355,7 +2371,7 @@ async def api_posts(request: Request):
     """Proxy post-scheduling request to the Postiz API."""
     auth = request.headers.get("Authorization", "")
     ct   = request.headers.get("Content-Type", "application/json")
-    body = await request.body()
+    body = await _read_request_body(request)
     return await run_in_threadpool(_postiz_proxy_post, "/posts", auth, body, ct)
 
 
@@ -2363,7 +2379,7 @@ async def api_posts(request: Request):
 async def api_upload_from_path(request: Request):
     """Read a file from a local disk path and proxy it to the Postiz upload endpoint."""
     auth = request.headers.get("Authorization", "")
-    raw  = await request.body()
+    raw  = await _read_request_body(request)
     req_data  = json.loads(raw)
     file_path = os.path.expanduser(req_data.get("path", "").strip())
 
@@ -2618,7 +2634,8 @@ async def api_slideshow_to_video(request: Request):
         safe_name = "reel_" + _os_path_basename(image_paths[0]).rsplit(".", 1)[0] + ".mp4"
         out_path = os.path.join(STITCH_OUTPUT_DIR, safe_name)
         os.makedirs(STITCH_OUTPUT_DIR, exist_ok=True)
-        _slideshow_to_video_ffmpeg(
+        await run_in_threadpool(
+            _slideshow_to_video_ffmpeg,
             image_paths, out_path,
             seconds_per_slide=seconds_per_slide,
             audio_path=audio_path,
@@ -2653,7 +2670,7 @@ async def api_slideshow_to_video_upload(request: Request):
     if "multipart/form-data" not in ct:
         raise HTTPException(400, "Expected multipart/form-data")
 
-    raw  = await request.body()
+    raw  = await _read_request_body(request)
     form = _parse_multipart(ct, raw)
     del raw  # release buffer; bytes are inside `form` now
     import gc as _gc; _gc.collect()
@@ -2701,7 +2718,8 @@ async def api_slideshow_to_video_upload(request: Request):
         safe_name = f"reel_upload_{len(image_paths)}slides.mp4"
         out_path  = os.path.join(STITCH_OUTPUT_DIR, safe_name)
         os.makedirs(STITCH_OUTPUT_DIR, exist_ok=True)
-        _slideshow_to_video_ffmpeg(
+        await run_in_threadpool(
+            _slideshow_to_video_ffmpeg,
             image_paths, out_path,
             seconds_per_slide=seconds_per_slide,
             audio_path=audio_path,
