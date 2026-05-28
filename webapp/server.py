@@ -258,17 +258,20 @@ def _stitch_videos_ffmpeg(
             parts.append("aevalsrc=0|0:sample_rate=44100:channel_layout=stereo[outa]")
             extra_flags = ["-shortest"]
 
-    result = _subprocess.run(
-        ["ffmpeg", "-y",
-         "-stream_loop", "-1", "-i", video1_path,
-         "-i", video2_path,
-         "-filter_complex", ";".join(parts),
-         "-map", "[outv]", "-map", "[outa]",
-         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-         "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-         *extra_flags, output_path],
-        capture_output=True, text=True,
-    )
+    try:
+        result = _subprocess.run(
+            ["ffmpeg", "-y",
+             "-stream_loop", "-1", "-i", video1_path,
+             "-i", video2_path,
+             "-filter_complex", ";".join(parts),
+             "-map", "[outv]", "-map", "[outa]",
+             "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+             *extra_flags, output_path],
+            capture_output=True, text=True, timeout=120,
+        )
+    except _subprocess.TimeoutExpired:
+        raise RuntimeError("FFmpeg stitch timed out after 120s — video may be too long")
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg stitch failed:\n{result.stderr[-800:]}")
     return output_path
@@ -363,7 +366,14 @@ def _slideshow_to_video_ffmpeg(
                 output_path,
             ]
 
-        result = _subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            result = _subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        except _subprocess.TimeoutExpired:
+            raise RuntimeError(
+                "FFmpeg slideshow-to-video timed out after 90s — "
+                "server CPU is under load. Reel conversion will be skipped; "
+                "slides will post as a photo carousel instead."
+            )
         if result.returncode != 0:
             raise RuntimeError(
                 f"FFmpeg slideshow-to-video failed:\n{result.stderr[-600:]}"
@@ -3143,7 +3153,11 @@ def main():
             target=lambda: (time.sleep(1.5), webbrowser.open(f"http://localhost:{port}")),
             daemon=True,
         ).start()
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(
+        app, host=host, port=port, log_level="info",
+        timeout_keep_alive=120,   # keep connections alive for slow Reel conversions
+        timeout_graceful_shutdown=30,
+    )
 
 
 if __name__ == "__main__":
