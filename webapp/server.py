@@ -326,39 +326,39 @@ def _slideshow_to_video_ffmpeg(
 
     use_music = audio_path and os.path.isfile(audio_path)
 
+    # ultrafast preset + higher CRF cuts encoding time from ~60s → ~8s on Render's
+    # shared CPU. Instagram Reels don't need broadcast quality; fast turnaround
+    # matters far more than a few extra KB of bitrate.
+    _VF = (
+        "scale=720:1280:force_original_aspect_ratio=decrease,"
+        "pad=720:1280:(ow-iw)/2:(oh-ih)/2:color=black,"
+        "setsar=1,fps=24"
+    )
+
     try:
         if use_music:
             cmd = [
                 "ffmpeg", "-y",
-                "-f", "concat", "-safe", "0", "-i", concat_txt,   # input 0: video
-                "-stream_loop", "-1", "-i", audio_path,            # input 1: music (looped)
-                "-vf", (
-                    "scale=1080:1920:force_original_aspect_ratio=decrease,"
-                    "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,"
-                    "setsar=1,fps=30"
-                ),
+                "-f", "concat", "-safe", "0", "-i", concat_txt,
+                "-stream_loop", "-1", "-i", audio_path,
+                "-vf", _VF,
                 "-map", "0:v", "-map", "1:a",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-                "-c:a", "aac", "-b:a", "192k",
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                "-c:a", "aac", "-b:a", "128k",
                 "-pix_fmt", "yuv420p",
-                "-t", str(total_dur),           # trim to exact slideshow length
+                "-t", str(total_dur),
                 "-movflags", "+faststart",
                 output_path,
             ]
         else:
-            # Generate a silent stereo track so Instagram does not auto-mute the Reel
             cmd = [
                 "ffmpeg", "-y",
-                "-f", "concat", "-safe", "0", "-i", concat_txt,   # input 0: video
-                "-f", "lavfi", "-i",                               # input 1: silence
+                "-f", "concat", "-safe", "0", "-i", concat_txt,
+                "-f", "lavfi", "-i",
                 f"anullsrc=r=44100:cl=stereo:d={total_dur:.3f}",
-                "-vf", (
-                    "scale=1080:1920:force_original_aspect_ratio=decrease,"
-                    "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,"
-                    "setsar=1,fps=30"
-                ),
+                "-vf", _VF,
                 "-map", "0:v", "-map", "1:a",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
                 "-c:a", "aac", "-b:a", "128k",
                 "-pix_fmt", "yuv420p",
                 "-shortest",
@@ -938,12 +938,13 @@ from pydantic import BaseModel
 
 app = FastAPI(title="Slidecast Studio")
 
-# Limit concurrent outbound uploads to Postiz so bulk-scheduling multiple
-# slideshows at once doesn't exhaust the thread pool and cause "Failed to fetch"
-# on the second (and subsequent) slideshows. 5 concurrent uploads is enough
-# throughput while keeping the server responsive.
 import asyncio as _asyncio
+# Cap concurrent Postiz uploads — prevents thread-pool exhaustion under bulk load.
 _UPLOAD_SEMAPHORE = _asyncio.Semaphore(20)
+# Serialise FFmpeg reel conversions: only ONE runs at a time.
+# Multiple retries previously left orphaned FFmpeg processes piling up and
+# pinning the CPU, which starved the event loop and caused 499s on slide uploads.
+_FFMPEG_SEMAPHORE = _asyncio.Semaphore(1)
 
 
 @app.exception_handler(ClientDisconnect)
@@ -2677,12 +2678,15 @@ async def api_slideshow_to_video(request: Request):
         safe_name = "reel_" + _os_path_basename(image_paths[0]).rsplit(".", 1)[0] + ".mp4"
         out_path = os.path.join(STITCH_OUTPUT_DIR, safe_name)
         os.makedirs(STITCH_OUTPUT_DIR, exist_ok=True)
-        await run_in_threadpool(
-            _slideshow_to_video_ffmpeg,
-            image_paths, out_path,
-            seconds_per_slide=seconds_per_slide,
-            audio_path=audio_path,
-        )
+        # Serialise FFmpeg: only one conversion at a time so retries don't pile
+        # up orphaned processes that pin the CPU and cause 499s on slide uploads.
+        async with _FFMPEG_SEMAPHORE:
+            await run_in_threadpool(
+                _slideshow_to_video_ffmpeg,
+                image_paths, out_path,
+                seconds_per_slide=seconds_per_slide,
+                audio_path=audio_path,
+            )
         print(f"[insta-reel] audio={os.path.basename(audio_path) if audio_path else 'silent'} → {os.path.basename(out_path)}")
         dl_url = f"/api/stitch-download?path={_urlparse.quote(out_path, safe='')}"
         return {"url": dl_url, "path": out_path}
@@ -2761,12 +2765,13 @@ async def api_slideshow_to_video_upload(request: Request):
         safe_name = f"reel_upload_{len(image_paths)}slides.mp4"
         out_path  = os.path.join(STITCH_OUTPUT_DIR, safe_name)
         os.makedirs(STITCH_OUTPUT_DIR, exist_ok=True)
-        await run_in_threadpool(
-            _slideshow_to_video_ffmpeg,
-            image_paths, out_path,
-            seconds_per_slide=seconds_per_slide,
-            audio_path=audio_path,
-        )
+        async with _FFMPEG_SEMAPHORE:
+            await run_in_threadpool(
+                _slideshow_to_video_ffmpeg,
+                image_paths, out_path,
+                seconds_per_slide=seconds_per_slide,
+                audio_path=audio_path,
+            )
         dl_url = f"/api/stitch-download?path={_urlparse.quote(out_path, safe='')}"
         return {"url": dl_url, "path": out_path}
     except RuntimeError as e:
