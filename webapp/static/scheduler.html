@@ -1171,6 +1171,9 @@ function buildSettings(intId, title, needsMusic = false, isCarousel = false, isV
   let extra = {};
 
   if (pl.includes("tiktok")) {
+    // Postiz enforces title ≤ 90 chars for TikTok at their API layer.
+    // Truncate here so we never send a title that triggers the 400.
+    resolvedTitle = resolvedTitle.slice(0, 90);
     // autoAddMusic is always "yes" — same behaviour for videos as for slideshows.
     // needsMusic was previously gated on videoHasAudio() which is unreliable in
     // browsers; TikTok's API handles the case where audio already exists gracefully.

@@ -442,7 +442,7 @@ def _postiz_proxy_post(endpoint: str, auth: str, body: bytes, content_type: str)
         "Accept":        "application/json",
     }
     last_exc = None
-    for attempt in range(4):
+    for attempt in range(5):
         try:
             # Fresh session per attempt — guarantees a clean SSL handshake
             # with no shared state from other concurrent threads.
@@ -453,6 +453,24 @@ def _postiz_proxy_post(endpoint: str, auth: str, body: bytes, content_type: str)
                     headers=headers,
                     timeout=120,
                 )
+            if r.status_code == 429:
+                # Rate limited — Postiz returns 429 as a normal HTTP response
+                # (not a network exception) so the retry loop never catches it
+                # without this explicit check.
+                # Respect Retry-After header if present; otherwise back off
+                # exponentially so burst uploads self-throttle automatically.
+                retry_after = float(r.headers.get("Retry-After", 2 ** (attempt + 1)))
+                jitter      = _random_retry.uniform(0, retry_after * 0.3)
+                wait        = retry_after + jitter
+                print(f"  [postiz 429] rate limited — waiting {wait:.1f}s "
+                      f"(attempt {attempt+1}/5)")
+                if attempt < 4:
+                    time.sleep(wait)
+                    continue
+                # All retries exhausted — surface the 429 so the frontend
+                # shows a meaningful error rather than a generic 500.
+                return Response(content=r.content, status_code=429,
+                                media_type="application/json")
             if r.status_code >= 400:
                 return Response(content=r.content, status_code=r.status_code,
                                 media_type="application/json")
@@ -460,13 +478,13 @@ def _postiz_proxy_post(endpoint: str, auth: str, body: bytes, content_type: str)
         except Exception as exc:
             last_exc = exc
             is_ssl = "SSL" in str(exc) or "ssl" in str(exc).lower()
-            if attempt < 3:
+            if attempt < 4:
                 # SSL errors get longer backoff + jitter so concurrent retries
                 # don't all hammer Postiz at the same instant.
                 base_wait = (4 ** attempt) if is_ssl else (2 ** attempt)
                 jitter    = _random_retry.uniform(0, base_wait * 0.5)
                 wait      = base_wait + jitter
-                print(f"  [postiz retry {attempt+1}/3] {'SSL error' if is_ssl else str(exc)[:80]}"
+                print(f"  [postiz retry {attempt+1}/4] {'SSL error' if is_ssl else str(exc)[:80]}"
                       f" — retrying in {wait:.1f}s")
                 time.sleep(wait)
     raise HTTPException(500, str(last_exc))
