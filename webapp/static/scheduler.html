@@ -213,6 +213,23 @@ body {
 .int-check { font-size: 13px; margin-left: 2px; opacity: 0; transition: opacity .15s; }
 .int-chip.active .int-check { opacity: 1; }
 
+/* ── Platform partitions ── */
+.platform-partition {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: rgba(255,247,232,.02);
+  margin-bottom: 12px;
+}
+.platform-partition:last-child { margin-bottom: 0; }
+.partition-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 /* ── Drop zone ── */
 .drop-zone {
   border: 2px dashed var(--border); border-radius: 14px;
@@ -557,20 +574,60 @@ body {
 
   <!-- ── Connected Accounts / Channel Selector ── -->
   <div class="card hidden" id="intCard">
-    <div class="row" style="margin-bottom:6px">
-      <div class="section-label" style="margin:0">Post To — Select Channels</div>
-      <div class="spacer"></div>
-      <button class="btn btn-outline btn-sm" style="padding:5px 10px;font-size:11px"
-              onclick="selectAllChannels()">Select All</button>
-      <button class="btn btn-outline btn-sm" style="padding:5px 10px;font-size:11px"
-              onclick="selectNoneChannels()">Deselect All</button>
-      <button class="btn btn-outline btn-sm" onclick="loadIntegrations()">↻ Refresh</button>
-    </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+    <div class="section-label" style="margin-bottom:4px">Post To — Select Channels</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
       Click to toggle which channels new posts will be sent to. You can also adjust per-post below.
     </div>
-    <div class="int-grid" id="intGrid">
-      <span style="color:var(--muted);font-size:13px">Loading…</span>
+
+    <!-- Instagram partition -->
+    <div class="platform-partition" id="partition-instagram">
+      <div class="row" style="margin-bottom:8px;align-items:center">
+        <span class="partition-label">📸 Instagram</span>
+        <div class="spacer"></div>
+        <button class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11px"
+                onclick="selectPartition('instagram')">Select All</button>
+        <button class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11px"
+                onclick="deselectPartition('instagram')">Deselect All</button>
+        <button class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11px"
+                onclick="loadIntegrations()">↻</button>
+      </div>
+      <div class="int-grid" id="intGrid-instagram">
+        <span style="color:var(--muted);font-size:12px">Loading…</span>
+      </div>
+    </div>
+
+    <!-- TikTok partition -->
+    <div class="platform-partition" id="partition-tiktok">
+      <div class="row" style="margin-bottom:8px;align-items:center">
+        <span class="partition-label">🎵 TikTok</span>
+        <div class="spacer"></div>
+        <button class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11px"
+                onclick="selectPartition('tiktok')">Select All</button>
+        <button class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11px"
+                onclick="deselectPartition('tiktok')">Deselect All</button>
+        <button class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11px"
+                onclick="loadIntegrations()">↻</button>
+      </div>
+      <div class="int-grid" id="intGrid-tiktok">
+        <span style="color:var(--muted);font-size:12px">Loading…</span>
+      </div>
+    </div>
+
+    <!-- YouTube partition -->
+    <div class="platform-partition" id="partition-youtube">
+      <div class="row" style="margin-bottom:8px;align-items:center">
+        <span class="partition-label">▶️ YouTube</span>
+        <div class="spacer"></div>
+        <button class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11px"
+                onclick="selectPartition('youtube')">Select All</button>
+        <button class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11px"
+                onclick="deselectPartition('youtube')">Deselect All</button>
+        <button class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11px"
+                onclick="loadIntegrations()">↻</button>
+      </div>
+      <div class="int-grid" id="intGrid-youtube">
+        <span style="color:var(--muted);font-size:12px">Loading…</span>
+      </div>
     </div>
   </div>
 
@@ -939,32 +996,69 @@ async function loadIntegrations() {
 }
 
 // ────────────────────────── Render integrations ────────────────────────────
+function _platformGroup(i) {
+  const pl = platform(i);
+  if (pl.includes("instagram")) return "instagram";
+  if (pl.includes("tiktok"))    return "tiktok";
+  if (pl.includes("youtube"))   return "youtube";
+  return "other";
+}
+
+function _chipHTML(i) {
+  const pl  = platform(i);
+  const ic  = ICONS[pl] || ICONS.default;
+  const col = COLORS[pl] || COLORS.default;
+  const sel = S.defaultAccounts.has(i.id);
+  return `<div class="int-chip ${sel ? "active" : ""}" id="intchip-${i.id}"
+               onclick="toggleDefaultAcc('${i.id}')" title="Click to toggle channel">
+    ${i.picture
+      ? `<img src="${i.picture}" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">`
+      : ""}
+    <span class="pi" style="${i.picture ? "display:none" : ""}">${ic}</span>
+    <div>
+      <div class="int-name">${esc(i.name || i.identifier || "Account")}</div>
+      <div class="int-platform" style="color:${col}"
+           title="identifier: ${esc(i.identifier||'')} | type: ${esc(i.type||'')} | provider: ${esc(i.provider||'')}">${pl || "(unknown)"}</div>
+    </div>
+    <span class="int-check">✓</span>
+  </div>`;
+}
+
 function renderInts() {
-  const g = document.getElementById("intGrid");
+  const PARTITIONS = ["instagram", "tiktok", "youtube"];
+  const buckets = { instagram: [], tiktok: [], youtube: [], other: [] };
+
   if (!S.integrations.length) {
-    g.innerHTML = `<span style="color:var(--muted);font-size:13px">
-      No accounts found — connect social accounts on platform.postiz.com first.</span>`;
+    PARTITIONS.forEach(p => {
+      const g = document.getElementById(`intGrid-${p}`);
+      if (g) g.innerHTML = `<span style="color:var(--muted);font-size:12px">
+        No accounts found — connect on platform.postiz.com first.</span>`;
+    });
     return;
   }
-  g.innerHTML = S.integrations.map(i => {
-    const pl  = platform(i);
-    const ic  = ICONS[pl] || ICONS.default;
-    const col = COLORS[pl] || COLORS.default;
-    const sel = S.defaultAccounts.has(i.id);
-    return `<div class="int-chip ${sel ? "active" : ""}" id="intchip-${i.id}"
-                 onclick="toggleDefaultAcc('${i.id}')" title="Click to toggle channel">
-      ${i.picture
-        ? `<img src="${i.picture}" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">`
-        : ""}
-      <span class="pi" style="${i.picture ? "display:none" : ""}">${ic}</span>
-      <div>
-        <div class="int-name">${esc(i.name || i.identifier || "Account")}</div>
-        <div class="int-platform" style="color:${col}"
-             title="identifier: ${esc(i.identifier||'')} | type: ${esc(i.type||'')} | provider: ${esc(i.provider||'')}">${pl || "(unknown)"}</div>
-      </div>
-      <span class="int-check">✓</span>
-    </div>`;
-  }).join("");
+
+  S.integrations.forEach(i => buckets[_platformGroup(i)].push(i));
+
+  PARTITIONS.forEach(p => {
+    const g   = document.getElementById(`intGrid-${p}`);
+    const sec = document.getElementById(`partition-${p}`);
+    if (!g) return;
+    if (!buckets[p].length) {
+      // hide the whole partition section if no accounts for that platform
+      if (sec) sec.style.display = "none";
+      return;
+    }
+    if (sec) sec.style.display = "";
+    g.innerHTML = buckets[p].map(_chipHTML).join("");
+  });
+
+  // "other" accounts (unknown platform) — append to instagram section as fallback
+  if (buckets.other.length) {
+    const g = document.getElementById("intGrid-instagram");
+    if (g) g.innerHTML += buckets.other.map(_chipHTML).join("");
+    const sec = document.getElementById("partition-instagram");
+    if (sec) sec.style.display = "";
+  }
 }
 
 // Propagate current defaultAccounts to every pending post and refresh their chips.
@@ -1010,6 +1104,30 @@ function selectNoneChannels() {
   });
   syncPostsToDefault();
   toast("All channels deselected — pending posts cleared too", "");
+}
+
+function selectPartition(platformKey) {
+  const ids = S.integrations
+    .filter(i => _platformGroup(i) === platformKey)
+    .map(i => i.id);
+  ids.forEach(id => {
+    S.defaultAccounts.add(id);
+    document.getElementById(`intchip-${id}`)?.classList.add("active");
+  });
+  syncPostsToDefault();
+  toast(`All ${ids.length} ${platformKey} account(s) selected`, "ok");
+}
+
+function deselectPartition(platformKey) {
+  const ids = S.integrations
+    .filter(i => _platformGroup(i) === platformKey)
+    .map(i => i.id);
+  ids.forEach(id => {
+    S.defaultAccounts.delete(id);
+    document.getElementById(`intchip-${id}`)?.classList.remove("active");
+  });
+  syncPostsToDefault();
+  toast(`All ${platformKey} accounts deselected`, "");
 }
 
 function platform(i) {
@@ -2610,6 +2728,8 @@ window.updateRandomMax             = updateRandomMax;
 window.toggleDefaultAcc            = toggleDefaultAcc;
 window.selectAllChannels           = selectAllChannels;
 window.selectNoneChannels          = selectNoneChannels;
+window.selectPartition             = selectPartition;
+window.deselectPartition           = deselectPartition;
 window.syncPostsToDefault          = syncPostsToDefault;
 window.runStitch                   = runStitch;
 window.stitchSourceFilesChosen     = stitchSourceFilesChosen;
