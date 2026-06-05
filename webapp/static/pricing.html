@@ -216,32 +216,92 @@ h1 em { font-style: italic; color: var(--accent); }
 
 <div class="cards">
 
-  <!-- Basic -->
+  <!-- Starter -->
   <div class="card">
-    <div class="plan-name">Basic</div>
-    <div class="price"><sup>$</sup>29<span style="font-size:1.2rem">.99</span></div>
-    <div class="price-period">per month · cancel anytime</div>
+    <div class="plan-name">Starter</div>
+    <div class="price"><sup>$</sup>9<span style="font-size:1.2rem">.99</span></div>
+    <div class="price-period">per month · start posting</div>
 
     <ul class="features">
       <li class="yes">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Carousel generation</span>
+        <span>Create up to <b>25 slideshow posts</b></span>
       </li>
       <li class="yes">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>TikTok &amp; Instagram scheduling</span>
+        <span>Up to <b>250 total slides</b></span>
       </li>
       <li class="yes">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Auto audio on posts</span>
+        <span>Connect <b>5 social accounts</b></span>
       </li>
-      <li class="no">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <span>Compilation carousels</span>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Schedule up to <b>250 posts / month</b></span>
       </li>
-      <li class="no">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <span>Priority support</span>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Captions + hashtags included</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Randomized posting times</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Postiz API connection</span>
+      </li>
+    </ul>
+
+    <div class="email-row" id="emailRowStarter">
+      <label for="emailStarter">Your email</label>
+      <input type="email" id="emailStarter" placeholder="you@example.com" autocomplete="email">
+    </div>
+    <p class="err" id="errStarter">Please enter a valid email address.</p>
+
+    <button class="btn btn-outline" id="btnStarter" onclick="startCheckout('starter','emailStarter','errStarter','btnStarter')">
+      <span class="btn-text">Get Starter →</span>
+      <span class="spinner">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+      </span>
+    </button>
+  </div>
+
+  <!-- Basic -->
+  <div class="card featured">
+    <div class="badge">Most Popular</div>
+    <div class="plan-name">Basic</div>
+    <div class="price"><sup>$</sup>29<span style="font-size:1.2rem">.99</span></div>
+    <div class="price-period">per month · best for creators</div>
+
+    <ul class="features">
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Create up to <b>100 slideshow posts</b></span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Up to <b>1,000 total slides</b></span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Connect <b>20 social accounts</b></span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Schedule up to <b>1,000 posts / month</b></span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Captions + hashtags included</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Bulk scheduling + randomized times</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Postiz API connection</span>
       </li>
     </ul>
 
@@ -251,7 +311,7 @@ h1 em { font-style: italic; color: var(--accent); }
     </div>
     <p class="err" id="errBasic">Please enter a valid email address.</p>
 
-    <button class="btn btn-outline" id="btnBasic" onclick="startCheckout('basic','emailBasic','errBasic','btnBasic')">
+    <button class="btn btn-primary" id="btnBasic" onclick="startCheckout('basic','emailBasic','errBasic','btnBasic')">
       <span class="btn-text">Get Basic →</span>
       <span class="spinner">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
@@ -260,28 +320,35 @@ h1 em { font-style: italic; color: var(--accent); }
   </div>
 
   <!-- Pro -->
-  <div class="card featured">
-    <div class="badge">Most Popular</div>
+  <div class="card">
     <div class="plan-name">Pro</div>
-    <div class="price"><sup>$</sup>69<span style="font-size:1.2rem">.99</span></div>
-    <div class="price-period">per month · cancel anytime</div>
+    <div class="price"><sup>$</sup>59<span style="font-size:1.2rem">.99</span></div>
+    <div class="price-period">per month · for many accounts</div>
 
     <ul class="features">
       <li class="yes">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Unlimited carousel generation</span>
+        <span>Create up to <b>250 slideshow posts</b></span>
       </li>
       <li class="yes">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>TikTok &amp; Instagram scheduling</span>
+        <span>Up to <b>2,500 total slides</b></span>
       </li>
       <li class="yes">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Auto audio on every post</span>
+        <span>Connect <b>50 social accounts</b></span>
       </li>
       <li class="yes">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Compilation carousels</span>
+        <span>Schedule up to <b>5,000 posts / month</b></span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Captions + hashtags included</span>
+      </li>
+      <li class="yes">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Bulk scheduling + randomized times</span>
       </li>
       <li class="yes">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -295,7 +362,7 @@ h1 em { font-style: italic; color: var(--accent); }
     </div>
     <p class="err" id="errPro">Please enter a valid email address.</p>
 
-    <button class="btn btn-primary" id="btnPro" onclick="startCheckout('pro','emailPro','errPro','btnPro')">
+    <button class="btn btn-outline" id="btnPro" onclick="startCheckout('pro','emailPro','errPro','btnPro')">
       <span class="btn-text">Get Pro →</span>
       <span class="spinner">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
@@ -430,10 +497,12 @@ onAuthStateChanged(auth, async user => {
       window.location.href = "/auth?redirect=/pricing";
     };
     // Pre-fill email fields with signed-in email
-    const emailBasic = document.getElementById("emailBasic");
-    const emailPro   = document.getElementById("emailPro");
-    if (emailBasic) emailBasic.value = user.email;
-    if (emailPro)   emailPro.value   = user.email;
+    const emailStarter = document.getElementById("emailStarter");
+    const emailBasic   = document.getElementById("emailBasic");
+    const emailPro     = document.getElementById("emailPro");
+    if (emailStarter) emailStarter.value = user.email;
+    if (emailBasic)   emailBasic.value   = user.email;
+    if (emailPro)     emailPro.value     = user.email;
   } else {
     // Not signed in
     localStorage.removeItem("sc_user");
@@ -491,7 +560,10 @@ async function startCheckout(plan, emailId, errId, btnId) {
   }
 }
 
-// Allow Enter key in either email field
+// Allow Enter key in email fields
+document.getElementById("emailStarter").addEventListener("keydown", e => {
+  if (e.key === "Enter") startCheckout("starter","emailStarter","errStarter","btnStarter");
+});
 document.getElementById("emailBasic").addEventListener("keydown", e => {
   if (e.key === "Enter") startCheckout("basic","emailBasic","errBasic","btnBasic");
 });
@@ -520,9 +592,12 @@ document.getElementById("emailPro").addEventListener("keydown", e => {
     if (window.fbAuth && window.fbAuth.currentUser) {
       clearInterval(tick);
       sessionStorage.removeItem("sc_pending_checkout");
-      const ids = pending.plan === "pro"
-        ? ["emailPro",   "errPro",   "btnPro"]
-        : ["emailBasic", "errBasic", "btnBasic"];
+      const idMap = {
+        starter: ["emailStarter", "errStarter", "btnStarter"],
+        basic:   ["emailBasic",   "errBasic",   "btnBasic"],
+        pro:     ["emailPro",     "errPro",     "btnPro"],
+      };
+      const ids = idMap[pending.plan] || idMap.basic;
       startCheckout(pending.plan, ids[0], ids[1], ids[2]);
     } else if (Date.now() - start > 6000) {
       // Auth never resolved — give up cleanly so the user can re-try manually

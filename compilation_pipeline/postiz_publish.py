@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -27,6 +28,7 @@ API_BASE = "https://api.postiz.com/public/v1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUTPUT_ROOT = os.path.join(ROOT, "output_compilations")
+PUBLISHED_LOG = os.path.join(OUTPUT_ROOT, "published.json")
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +57,37 @@ def _headers(json_body: bool = False) -> dict[str, str]:
     if json_body:
         h["Content-Type"] = "application/json"
     return h
+
+
+# ---------------------------------------------------------------------------
+# Publish-state tracker — prevents duplicate posts
+# ---------------------------------------------------------------------------
+
+
+def _load_published() -> dict:
+    if os.path.exists(PUBLISHED_LOG):
+        with open(PUBLISHED_LOG) as f:
+            return json.load(f)
+    return {}
+
+
+def _save_published(data: dict) -> None:
+    os.makedirs(os.path.dirname(PUBLISHED_LOG), exist_ok=True)
+    with open(PUBLISHED_LOG, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _mark_published(slug: str, post_type: str, response: object) -> None:
+    data = _load_published()
+    data[slug] = {
+        "published_at": datetime.now(timezone.utc).isoformat(),
+        "post_type": post_type,
+    }
+    _save_published(data)
+
+
+def is_already_published(slug: str) -> bool:
+    return slug in _load_published()
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +594,7 @@ def publish_compilation(
         "posts": posts_payload,
     }
     out = create_post(payload)
+    _mark_published(slug, post_type, out)
     print(f"  created: {out}")
     return out
 
@@ -576,6 +610,8 @@ def main() -> None:
                    help="comma-separated integration ids; default: NutriLens TikTok only")
     p.add_argument("--dry-run", action="store_true",
                    help="print captions only; do not upload or post")
+    p.add_argument("--force", action="store_true",
+                   help="publish even if already in published.json")
     args = p.parse_args()
 
     all_integrations = list_integrations()
@@ -603,6 +639,14 @@ def main() -> None:
         slugs = sorted(d for d in os.listdir(OUTPUT_ROOT)
                        if os.path.isdir(os.path.join(OUTPUT_ROOT, d))
                        and os.path.exists(os.path.join(OUTPUT_ROOT, d, f"{d}.json")))
+
+    # Filter out already-published slugs (unless --force or --dry-run)
+    if not args.force and not args.dry_run:
+        before = len(slugs)
+        slugs = [s for s in slugs if not is_already_published(s)]
+        skipped = before - len(slugs)
+        if skipped:
+            print(f"\nSkipped {skipped} already-published compilation(s). Use --force to re-publish.")
 
     print(f"\nProcessing {len(slugs)} compilation(s) (type={args.type}, dry_run={args.dry_run})")
 

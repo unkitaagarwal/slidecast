@@ -624,6 +624,7 @@ class JobStore:
                 "message": "Queued",
                 "result": None,
                 "error": None,
+                "cancel_requested": False,
                 "created_at": time.time(),
                 "updated_at": time.time(),
             }
@@ -638,6 +639,28 @@ class JobStore:
             j.update(kw)
             j["updated_at"] = time.time()
             self._persist(job_id, j)
+
+    def cancel(self, job_id: str) -> bool:
+        """Request cancellation of a pending or running job.
+        Returns True if the job was found and can be cancelled."""
+        with self._lock:
+            j = self._jobs.get(job_id)
+            if not j:
+                return False
+            if j["status"] not in ("pending", "running"):
+                return False
+            j["cancel_requested"] = True
+            j["status"] = "cancelled"
+            j["message"] = "Cancelled by user"
+            j["updated_at"] = time.time()
+            self._persist(job_id, j)
+        return True
+
+    def is_cancelled(self, job_id: str) -> bool:
+        """Check whether a cancellation has been requested for this job."""
+        with self._lock:
+            j = self._jobs.get(job_id)
+            return bool(j and j.get("cancel_requested"))
 
     def get(self, job_id: str) -> Optional[dict]:
         with self._lock:
@@ -804,6 +827,10 @@ AUX_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 # Pipeline wrappers (run in worker threads)
 # ---------------------------------------------------------------------------
 
+class _JobCancelledError(Exception):
+    """Raised inside a pipeline worker when the user cancels the job."""
+
+
 def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
     try:
         JOBS.update(job_id, status="running", message="Crafting your slideshow…")
@@ -811,7 +838,10 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
 
         # Stream phase-by-phase progress into the job record so the UI's
         # idle-timeout reset has real heartbeats to work with.
+        # Also check for user cancellation on every progress tick.
         def _on_progress(msg: str) -> None:
+            if JOBS.is_cancelled(job_id):
+                raise _JobCancelledError("Job cancelled by user")
             JOBS.update(job_id, message=msg)
 
         rdir   = single.run_one_recipe(brief, progress_cb=_on_progress)
@@ -863,6 +893,9 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
                 "slide_urls": slide_urls,
             },
         )
+    except _JobCancelledError:
+        print(f"  [job {job_id}] cancelled by user (single)")
+        # Status is already 'cancelled' — nothing more to do.
     except Exception as e:
         traceback.print_exc()
         JOBS.update(job_id, status="failed",
@@ -881,7 +914,10 @@ def _run_compilation(job_id: str, theme: str,
         # Stream phase-by-phase progress from the pipeline into the job record
         # so the UI's poller (and its idle-timeout reset) sees real heartbeats
         # instead of one silent ~8-minute block.
+        # Also check for user cancellation on every progress tick.
         def _on_progress(msg: str) -> None:
+            if JOBS.is_cancelled(job_id):
+                raise _JobCancelledError("Job cancelled by user")
             JOBS.update(job_id, message=msg)
 
         cdir = comp.run_one_compilation(theme, progress_cb=_on_progress)
@@ -933,6 +969,9 @@ def _run_compilation(job_id: str, theme: str,
                 "slide_urls": slide_urls,
             },
         )
+    except _JobCancelledError:
+        print(f"  [job {job_id}] cancelled by user (compilation)")
+        # Status is already 'cancelled' — nothing more to do.
     except Exception as e:
         traceback.print_exc()
         JOBS.update(job_id, status="failed",
@@ -1192,6 +1231,24 @@ def api_job(job_id: str):
     }
 
 
+@app.post("/api/jobs/{job_id}/cancel")
+def api_cancel_job(job_id: str):
+    """Request cancellation of an in-flight generation job.
+
+    Sets cancel_requested=True on the job and flips status to 'cancelled'.
+    The pipeline worker checks this flag on each progress tick and raises
+    _JobCancelledError, which unwinds the pipeline cleanly.
+    Returns 409 if the job is already done/failed/cancelled.
+    """
+    j = JOBS.get(job_id)
+    if not j:
+        raise HTTPException(404, "job not found")
+    if j["status"] not in ("pending", "running"):
+        raise HTTPException(409, f"job already in terminal state: {j['status']}")
+    JOBS.cancel(job_id)
+    return {"cancelled": True, "job_id": job_id}
+
+
 @app.get("/api/admin/health")
 def api_admin_health():
     """Diagnostic snapshot for debugging stuck-worker / queue issues.
@@ -1273,15 +1330,20 @@ def _stripe_module():
 
 
 def _plan_to_price_id(plan: str) -> Optional[str]:
-    """Map "basic"/"pro" → Stripe price ID.
+    """Map "starter"/"basic"/"pro" → Stripe price ID.
 
     Accepts two env var conventions for each plan so .env / Render config can
     use whichever feels natural:
+        STRIPE_PRICE_STARTER    or   STRIPE_PRICE_ID_STARTER
         STRIPE_PRICE_BASIC      or   STRIPE_PRICE_ID_BASIC
         STRIPE_PRICE_PRO        or   STRIPE_PRICE_ID_PRO
     First non-empty match wins. Returns None when nothing's configured.
     """
     plan = (plan or "").strip().lower()
+    if plan == "starter":
+        return (os.environ.get("STRIPE_PRICE_STARTER", "").strip()
+                or os.environ.get("STRIPE_PRICE_ID_STARTER", "").strip()
+                or None)
     if plan == "basic":
         return (os.environ.get("STRIPE_PRICE_BASIC", "").strip()
                 or os.environ.get("STRIPE_PRICE_ID_BASIC", "").strip()
@@ -1298,6 +1360,11 @@ def _price_id_to_plan(price_id: str) -> str:
     pid = (price_id or "").strip()
     if not pid:
         return ""
+    if pid in {
+        os.environ.get("STRIPE_PRICE_STARTER", "").strip(),
+        os.environ.get("STRIPE_PRICE_ID_STARTER", "").strip(),
+    }:
+        return "starter"
     if pid in {
         os.environ.get("STRIPE_PRICE_BASIC", "").strip(),
         os.environ.get("STRIPE_PRICE_ID_BASIC", "").strip(),
@@ -1338,8 +1405,8 @@ async def api_create_checkout_session(request: Request):
     if not price_id:
         raise HTTPException(
             400,
-            "Plan not recognized. Make sure STRIPE_PRICE_BASIC and "
-            "STRIPE_PRICE_PRO are set in the server environment.",
+            "Plan not recognized. Make sure STRIPE_PRICE_STARTER, "
+            "STRIPE_PRICE_BASIC, and STRIPE_PRICE_PRO are set in the server environment.",
         )
 
     stripe = _stripe_module()

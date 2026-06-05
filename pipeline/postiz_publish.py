@@ -21,6 +21,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from typing import Iterable
 
 import requests
@@ -28,6 +29,7 @@ import requests
 
 API_BASE = "https://api.postiz.com/public/v1"
 OUTPUT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "output"))
+PUBLISHED_LOG = os.path.join(OUTPUT_ROOT, "published.json")
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +59,38 @@ def _headers(json_body: bool = False) -> dict[str, str]:
     if json_body:
         h["Content-Type"] = "application/json"
     return h
+
+
+# ---------------------------------------------------------------------------
+# Publish-state tracker — prevents duplicate posts
+# ---------------------------------------------------------------------------
+
+
+def _load_published() -> dict:
+    """Load {slug: {published_at, post_type, ...}} from disk."""
+    if os.path.exists(PUBLISHED_LOG):
+        with open(PUBLISHED_LOG) as f:
+            return json.load(f)
+    return {}
+
+
+def _save_published(data: dict) -> None:
+    os.makedirs(os.path.dirname(PUBLISHED_LOG), exist_ok=True)
+    with open(PUBLISHED_LOG, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _mark_published(slug: str, post_type: str, response: object) -> None:
+    data = _load_published()
+    data[slug] = {
+        "published_at": datetime.now(timezone.utc).isoformat(),
+        "post_type": post_type,
+    }
+    _save_published(data)
+
+
+def is_already_published(slug: str) -> bool:
+    return slug in _load_published()
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +395,7 @@ def publish_recipe(
         "posts": posts_payload,
     }
     out = create_post(payload)
+    _mark_published(slug, post_type, out)
     print(f"  created post(s): {out}")
     return out
 
@@ -380,6 +415,8 @@ def main() -> None:
                    help="ISO date, required for type=schedule")
     p.add_argument("--integrations",
                    help="comma-separated integration ids; default: all TikTok integrations")
+    p.add_argument("--force", action="store_true",
+                   help="publish even if already in published.json")
     args = p.parse_args()
 
     all_integrations = list_integrations()
@@ -411,6 +448,14 @@ def main() -> None:
         slugs = sorted(d for d in os.listdir(OUTPUT_ROOT)
                        if os.path.isdir(os.path.join(OUTPUT_ROOT, d))
                        and os.path.exists(os.path.join(OUTPUT_ROOT, d, f"{d}.json")))
+
+    # Filter out already-published slugs (unless --force)
+    if not args.force:
+        before = len(slugs)
+        slugs = [s for s in slugs if not is_already_published(s)]
+        skipped = before - len(slugs)
+        if skipped:
+            print(f"\nSkipped {skipped} already-published recipe(s). Use --force to re-publish.")
 
     print(f"\nPublishing {len(slugs)} recipe(s) as type={args.type} ...")
     results = []
