@@ -560,6 +560,7 @@ body {
       <input class="key-input" id="keyInput" type="password"
              placeholder="Paste your API key here…">
       <button class="btn" id="connectBtn" onclick="connect()">Connect</button>
+      <button class="btn" id="clearKeyBtn" onclick="clearApiKey()" style="display:none">Clear</button>
     </div>
     <div style="margin-top:10px;font-size:12px;color:var(--muted)">
       Find it at
@@ -903,6 +904,25 @@ const S = {
   instagramAudio: {}
 };
 
+// ── Dedup: prevent scheduling the same slideshow twice ─────────────────────
+// In-queue: check folderPath before adding.
+// Cross-session: persist scheduled folderPaths in localStorage.
+const SCHEDULED_KEY = "slidecast_scheduled_history";
+function loadScheduledHistory() {
+  try { return JSON.parse(localStorage.getItem(SCHEDULED_KEY) || "{}"); } catch { return {}; }
+}
+function markScheduled(folderPath) {
+  const h = loadScheduledHistory();
+  h[folderPath] = new Date().toISOString();
+  localStorage.setItem(SCHEDULED_KEY, JSON.stringify(h));
+}
+function wasScheduledBefore(folderPath) {
+  return !!loadScheduledHistory()[folderPath];
+}
+function isInQueue(folderPath) {
+  return S.posts.some(p => p.folderPath === folderPath);
+}
+
 const ICONS = {
   instagram:"📷", tiktok:"🎵", youtube:"▶️", twitter:"🐦",
   linkedin:"💼", facebook:"📘", threads:"🧵", pinterest:"📌",
@@ -960,12 +980,31 @@ async function connect() {
     document.getElementById("schedModeCard").classList.remove("hidden");
     document.getElementById("instaAudioCard").classList.remove("hidden");
     toast(`Connected — ${S.integrations.length} account(s) found`, "ok");
-    btn.textContent = "Reconnect";
+    btn.style.display = "none";
+    document.getElementById("clearKeyBtn").style.display = "";
   } catch (e) {
     toast("Connection failed: " + e.message, "fail");
-    btn.textContent = "Connect";
+    btn.style.display = "";
+    document.getElementById("clearKeyBtn").style.display = "none";
   }
   btn.disabled = false;
+  btn.textContent = "Connect";
+}
+
+function clearApiKey() {
+  if (S.busy) { toast("Wait for current batch to finish", "fail"); return; }
+  S.apiKey = "";
+  S.integrations = [];
+  S.defaultAccounts.clear();
+  localStorage.removeItem("postiz_key");
+  document.getElementById("keyInput").value = "";
+  document.getElementById("connectBtn").style.display = "";
+  document.getElementById("clearKeyBtn").style.display = "none";
+  document.getElementById("intCard").classList.add("hidden");
+  document.getElementById("dropCard").classList.add("hidden");
+  document.getElementById("schedModeCard").classList.add("hidden");
+  document.getElementById("instaAudioCard").classList.add("hidden");
+  toast("API key cleared — accounts removed", "ok");
 }
 
 async function loadIntegrations() {
@@ -1327,6 +1366,11 @@ async function handleFolderBrowse(input) {
     });
 
     if (isSingle) {
+      // ── Dedup check for single folder ──
+      if (isInQueue(rootName) || wasScheduledBefore(rootName)) {
+        toast(`"${rootName}" is already queued or was previously scheduled`, "fail");
+        btn.disabled = false; btn.innerHTML = "Choose Folder"; return;
+      }
       // ── Single slideshow folder ──────────────────────────────────────────
       // JSON: root/name.json  (length 2)
       const jsonFile = allFiles.find(f => {
@@ -1375,7 +1419,18 @@ async function handleFolderBrowse(input) {
 
       let added = 0;
       const skippedList = [];  // [{name, count}, …]
+      const dupList = [];      // names already in queue or previously scheduled
       for (const subName of subNames) {
+        // ── Dedup: skip if already in queue or scheduled before ──
+        if (isInQueue(subName)) {
+          dupList.push(subName);
+          continue;
+        }
+        if (wasScheduledBefore(subName)) {
+          dupList.push(subName);
+          continue;
+        }
+
         const subFiles = groups[subName];
 
         // JSON: root/subName/file.json — any depth under subName, just find the .json
@@ -1406,6 +1461,9 @@ async function handleFolderBrowse(input) {
 
         S.posts.push(makePostFromFiles(subName, slides, meta, added));
         added++;
+      }
+      if (dupList.length) {
+        toast(`Skipped ${dupList.length} already-queued/scheduled slideshow(s)`, "");
       }
 
       renderQueue();
@@ -1567,13 +1625,19 @@ async function loadSlideshowFromFolder() {
         throw new Error("No slideshow subfolders found");
 
       let added = 0;
+      let dupCount = 0;
       for (const sw of slideshows || []) {
+        if (isInQueue(sw.folderName) || wasScheduledBefore(sw.folderName)) {
+          dupCount++;
+          continue;
+        }
         const post = buildSlideshowPostFromPaths(
           sw.folderName, folderPath + "/" + sw.folderName, sw.slides, sw.metadata, added
         );
         S.posts.push(post);
         added++;
       }
+      if (dupCount) toast(`Skipped ${dupCount} already-queued/scheduled slideshow(s)`, "");
       renderQueue();
       if (S.schedMode === "cadence") applyDailyCadence();
       if (added) toast(`Queued ${added} slideshow(s) from folder`, "ok");
@@ -1586,6 +1650,10 @@ async function loadSlideshowFromFolder() {
       // ── Single slideshow folder ──────────────────────────────────────────
       const { slides, metadata } = data;
       const folderName = folderPath.split("/").pop();
+      if (isInQueue(folderName) || wasScheduledBefore(folderName)) {
+        toast(`"${folderName}" is already queued or was previously scheduled`, "fail");
+        btn.disabled = false; btn.innerHTML = "Load"; return;
+      }
       if (!slides || slides.length < 2) {
         showSkippedPanel([{ name: folderName, count: slides?.length || 0 }]);
         throw new Error(`"${folderName}" has ${slides?.length || 0} slide(s) — need at least 2`);
@@ -2349,6 +2417,8 @@ async function scheduleAll() {
       }
 
       setStatus(p, "done");
+      // ── Record in localStorage so cross-session dedup works ──
+      if (p.folderPath) markScheduled(p.folderPath);
       done++;
       toast(`✓ Scheduled: ${postLabel}`, "ok");
 
@@ -2718,6 +2788,7 @@ function stitchRenderResults(data) {
 
 // Expose for inline onclick / global use
 window.connect                     = connect;
+window.clearApiKey                 = clearApiKey;
 window.loadIntegrations            = loadIntegrations;
 window.loadSlideshowFromFolder     = loadSlideshowFromFolder;
 window.handleVideoFolderBrowse     = handleVideoFolderBrowse;

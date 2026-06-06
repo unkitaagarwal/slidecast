@@ -24,10 +24,13 @@
   const modal = $('#modal');
   const modalBody = $('#modal-body');
   const modalClose = $('#modal-close');
+  const cancelBtn = $('#cancel-btn');
 
   let selectedFmt = 'compilation';
   let currentResult = null;
   let allItems = [];
+  // Set to true by the cancel button to break the pollJob loop
+  let _cancelRequested = false;
 
   // ---------- Prompt dialog wiring ----------
   // Format selector lives in two places: the rich cards (.fmt-card) above and
@@ -131,9 +134,16 @@
       promptEl.focus();
       return;
     }
+    _cancelRequested = false;
     generateBtn.disabled = true;
     generateBtn.querySelector('svg')?.style && (generateBtn.querySelector('svg').style.opacity = '0');
     generateBtn.firstChild && (generateBtn.firstChild.nodeValue = 'Generating');
+
+    // Show cancel button in an enabled, ready state
+    if (cancelBtn) {
+      cancelBtn.disabled = false;
+      cancelBtn.style.display = '';
+    }
 
     resultPanel.classList.add('hidden');
     jobPanel.classList.remove('hidden');
@@ -173,6 +183,8 @@
   function restoreGenerateBtn() {
     generateBtn.disabled = false;
     generateBtn.innerHTML = `Generate <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>`;
+    // Hide cancel button once generation is done/failed/cancelled
+    if (cancelBtn) cancelBtn.style.display = 'none';
   }
 
   async function pollJob(jobId) {
@@ -186,6 +198,23 @@
     let progress = 8;
     let stageIdx = 0;
     const messages = selectedFmt === 'compilation' ? STAGE_MESSAGES_COMP : STAGE_MESSAGES_SINGLE;
+
+    // Wire up the cancel button for this job
+    async function requestCancel() {
+      if (cancelBtn) {
+        cancelBtn.disabled = true;
+        cancelBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-6.22-8.56"/></svg> Cancelling…`;
+      }
+      _cancelRequested = true;
+      jobTitle.textContent = 'Cancelling…';
+      jobMsg.textContent = 'Sending cancel request to server…';
+      try {
+        await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+      } catch (e) {
+        console.warn('Cancel request failed:', e);
+      }
+    }
+    if (cancelBtn) cancelBtn.onclick = requestCancel;
 
     while (true) {
       await new Promise((r) => setTimeout(r, 1500));
@@ -217,6 +246,12 @@
         if (j.message) jobMsg.textContent = j.message;
         jobTitle.textContent = j.status === 'pending' ? 'Queued' : 'Working';
 
+        if (j.status === 'cancelled') {
+          jobBar.style.width = '0%';
+          jobTitle.textContent = 'Cancelled';
+          jobMsg.textContent = 'Generation was cancelled.';
+          break;
+        }
         if (j.status === 'done') {
           jobBar.style.width = '100%';
           jobTitle.textContent = 'Ready';
@@ -1093,6 +1128,9 @@
   }
 
   // ---------- Initial load ----------
+  // Cancel button is only visible during active generation
+  if (cancelBtn) cancelBtn.style.display = 'none';
+
   applyBranding();
   refreshLibrary();
   // Tracking section ("Daily impressions" + Leaderboard + Top posts) and the
