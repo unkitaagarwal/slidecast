@@ -3171,6 +3171,71 @@ def pricing_page():
     return _serve_html("pricing.html")
 
 
+@app.get("/contact")
+def contact_page():
+    return _serve_html("contact.html")
+
+
+@app.post("/api/contact")
+async def api_contact(request: Request):
+    """Receive a contact form submission and email it to nutrilensai@gmail.com."""
+    import smtplib
+    from email.mime.text import MIMEText
+
+    data = await request.json()
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip()
+    subject = (data.get("subject") or "No subject").strip()
+    message = (data.get("message") or "").strip()
+
+    if not name or not email or not message:
+        raise HTTPException(400, "Name, email, and message are required.")
+
+    CONTACT_TO = "nutrilensai@gmail.com"
+
+    body = (
+        f"Name: {name}\n"
+        f"Email: {email}\n"
+        f"Subject: {subject}\n"
+        f"---\n\n"
+        f"{message}"
+    )
+
+    # Try SMTP if credentials are configured, otherwise store to Firestore
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_pass = os.environ.get("SMTP_PASS", "").strip()
+
+    if smtp_user and smtp_pass:
+        msg = MIMEText(body)
+        msg["Subject"] = f"[SlideCast Contact] {subject}"
+        msg["From"] = smtp_user
+        msg["To"] = CONTACT_TO
+        msg["Reply-To"] = email
+
+        try:
+            with smtplib.SMTP("smtp.gmail.com", 587) as s:
+                s.starttls()
+                s.login(smtp_user, smtp_pass)
+                s.send_message(msg)
+        except Exception as e:
+            log.error("SMTP send failed: %s", e)
+            raise HTTPException(500, "Failed to send email. Please try again later.")
+    else:
+        # Fallback: save to Firestore so messages aren't lost
+        try:
+            from google.cloud.firestore import AsyncClient as _FsAsync
+            _fs = _FsAsync(project="slidecast-75f5c")
+            await _fs.collection("contact_messages").add({
+                "name": name, "email": email, "subject": subject,
+                "message": message, "created_at": __import__("datetime").datetime.utcnow().isoformat(),
+            })
+        except Exception as e:
+            log.warning("Firestore contact fallback failed: %s", e)
+            raise HTTPException(500, "Failed to save message. Please try again later.")
+
+    return {"ok": True}
+
+
 @app.get("/success")
 def success_page():
     """Stripe redirects here after a completed Checkout session.

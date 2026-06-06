@@ -184,7 +184,7 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 /* ============================================================
    Hero
    ============================================================ */
-.hero { padding: 80px 0 100px; position: relative; }
+.hero { padding: 60px 0 40px; position: relative; }
 @media (max-width: 1100px) { .hero { padding: 56px 0 60px; } }
 
 .hero-grid {
@@ -451,7 +451,7 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 /* ============================================================
    Demo video section
    ============================================================ */
-.demo { padding: 80px 0 60px; }
+.demo { padding: 40px 0 30px; }
 .demo-grid {
   display: grid; grid-template-columns: 1fr 1.2fr; gap: 48px; align-items: center;
 }
@@ -501,7 +501,7 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 /* ============================================================
    How it works
    ============================================================ */
-.how { padding: 100px 0 60px; }
+.how { padding: 50px 0 30px; }
 .how-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
 }
@@ -536,7 +536,7 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 /* ============================================================
    Generator — studio layout
    ============================================================ */
-.generator { padding: 80px 0; }
+.generator { padding: 40px 0 30px; }
 .studio-grid {
   display: grid; grid-template-columns: 1fr 1.3fr; gap: 40px; align-items: start;
 }
@@ -915,7 +915,7 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 /* ============================================================
    Library — horizontal scroll rails, one per format
    ============================================================ */
-.library { padding: 60px 0 100px; }
+.library { padding: 40px 0 40px; }
 
 .section-sub {
   color: var(--ink-dim); font-size: 15px;
@@ -1324,7 +1324,7 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 /* ============================================================
    Bottom CTA
    ============================================================ */
-.bottom-cta { padding: 60px 0 40px; }
+.bottom-cta { padding: 40px 0 30px; }
 .bottom-cta-card {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -1357,7 +1357,7 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 /* ============================================================
    Postiz integration showcase
    ============================================================ */
-.postiz-showcase { padding: 80px 0 40px; }
+.postiz-showcase { padding: 40px 0 20px; }
 .postiz-mockup {
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 20px; padding: 28px; margin-top: 8px;
@@ -1416,12 +1416,12 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
 /* ============================================================
    Why slideshows
    ============================================================ */
-.why-slideshows { padding: 80px 0 40px; }
+.why-slideshows { padding: 40px 0 20px; }
 
 /* ============================================================
    Pricing
    ============================================================ */
-.pricing-section { padding: 80px 0 40px; }
+.pricing-section { padding: 40px 0 20px; }
 .pricing-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
   margin-top: 40px;
