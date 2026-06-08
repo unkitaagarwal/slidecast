@@ -61,10 +61,7 @@ def run_one_recipe(brief: str, *, image_quality: str = "medium",
     def _emit(msg: str) -> None:
         if progress_cb is None:
             return
-        try:
-            progress_cb(msg)
-        except Exception as _e:
-            print(f"  [progress_cb] swallowed: {_e}")
+        progress_cb(msg)  # let cancellation exceptions propagate
 
     print(f"\n=== {brief} ===")
     _emit("Sketching out your 10-slide story…")

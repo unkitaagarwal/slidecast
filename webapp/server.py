@@ -829,6 +829,30 @@ AUX_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 # Pipeline wrappers (run in worker threads)
 # ---------------------------------------------------------------------------
 
+import re as _re_mod
+
+_FRIENDLY_PHRASES = [
+    "Warming up the creative engine…",
+    "Picking the perfect color palette…",
+    "Writing scroll-stopping hooks…",
+    "Designing each slide layout…",
+    "Adding the finishing touches…",
+    "Making it look effortless…",
+    "Almost there — polishing your slides…",
+    "Wrapping it all up…",
+    "Saving your masterpiece…",
+    "Just a moment more…",
+]
+
+
+def _friendly_progress(raw_msg: str, step_counter: list) -> str:
+    """Rewrite internal pipeline messages into casual, user-friendly copy."""
+    # Cycle through friendly phrases on each call
+    idx = step_counter[0] % len(_FRIENDLY_PHRASES)
+    step_counter[0] += 1
+    return _FRIENDLY_PHRASES[idx]
+
+
 class _JobCancelledError(Exception):
     """Raised inside a pipeline worker when the user cancels the job."""
 
@@ -841,12 +865,17 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
         # Stream phase-by-phase progress into the job record so the UI's
         # idle-timeout reset has real heartbeats to work with.
         # Also check for user cancellation on every progress tick.
+        # Rewrites technical messages into friendly UI copy.
+        _single_step = [0]
         def _on_progress(msg: str) -> None:
             if JOBS.is_cancelled(job_id):
                 raise _JobCancelledError("Job cancelled by user")
-            JOBS.update(job_id, message=msg)
+            friendly = _friendly_progress(msg, _single_step)
+            JOBS.update(job_id, message=friendly)
 
         rdir   = single.run_one_recipe(brief, progress_cb=_on_progress)
+        if JOBS.is_cancelled(job_id):
+            raise _JobCancelledError("Job cancelled by user")
         slug   = os.path.basename(rdir)
         slides = sorted(
             f for f in os.listdir(os.path.join(rdir, "slides"))
@@ -863,6 +892,10 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
         except Exception as _e:
             print(f"  [caption] build failed: {_e}")
 
+        # Check cancel before expensive upload
+        if JOBS.is_cancelled(job_id):
+            raise _JobCancelledError("Job cancelled by user")
+
         # Upload to Firebase Storage + log to Firestore
         JOBS.update(job_id, message="Uploading your slides to the cloud…")
         slide_urls = _upload_slides_and_log(
@@ -873,7 +906,7 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
             theme          = brief,
             slide_filenames= slides,
             caption        = caption,
-            progress_cb    = lambda msg: JOBS.update(job_id, message=msg),
+            progress_cb    = _on_progress,
         )
 
         # Clean up local output dir — slides are in Firebase, no need to keep them on disk
@@ -917,12 +950,17 @@ def _run_compilation(job_id: str, theme: str,
         # so the UI's poller (and its idle-timeout reset) sees real heartbeats
         # instead of one silent ~8-minute block.
         # Also check for user cancellation on every progress tick.
+        # Rewrites technical messages into friendly UI copy.
+        _comp_step = [0]
         def _on_progress(msg: str) -> None:
             if JOBS.is_cancelled(job_id):
                 raise _JobCancelledError("Job cancelled by user")
-            JOBS.update(job_id, message=msg)
+            friendly = _friendly_progress(msg, _comp_step)
+            JOBS.update(job_id, message=friendly)
 
         cdir = comp.run_one_compilation(theme, progress_cb=_on_progress)
+        if JOBS.is_cancelled(job_id):
+            raise _JobCancelledError("Job cancelled by user")
         slug = os.path.basename(cdir)
         slides = sorted(
             f for f in os.listdir(os.path.join(cdir, "slides"))
@@ -939,6 +977,10 @@ def _run_compilation(job_id: str, theme: str,
         except Exception as _e:
             print(f"  [caption] build failed: {_e}")
 
+        # Check cancel before expensive upload
+        if JOBS.is_cancelled(job_id):
+            raise _JobCancelledError("Job cancelled by user")
+
         # Upload to Firebase Storage + log to Firestore
         JOBS.update(job_id, message="Uploading your slides to the cloud…")
         slide_urls = _upload_slides_and_log(
@@ -949,7 +991,7 @@ def _run_compilation(job_id: str, theme: str,
             theme          = theme,
             slide_filenames= slides,
             caption        = caption,
-            progress_cb    = lambda msg: JOBS.update(job_id, message=msg),
+            progress_cb    = _on_progress,
         )
 
         # Clean up local output dir — slides are in Firebase, no need to keep them on disk
