@@ -1632,49 +1632,65 @@ def api_branding():
     return _load_branding()
 
 
+_firebase_cache = {}  # key -> (timestamp, data)
+_FIREBASE_CACHE_TTL = 120  # seconds
+
+
+def _firebase_cached(key, fetcher):
+    """Return cached result if fresh, otherwise call fetcher and cache it."""
+    entry = _firebase_cache.get(key)
+    if entry and (time.time() - entry[0]) < _FIREBASE_CACHE_TTL:
+        return entry[1]
+    result = fetcher()
+    _firebase_cache[key] = (time.time(), result)
+    return result
+
+
 def _firebase_list_slugs(format_name: str) -> list:
     """Query Firebase Storage REST API to list all carousel slugs for a format.
     Returns list of slug strings. No auth needed — bucket is public read."""
-    try:
-        prefix   = _urlparse.quote(f"carousels/{format_name}/", safe="")
-        url      = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
-                    f"/o?prefix={prefix}&delimiter=%2F")
-        req      = _urlreq.Request(url, headers={"Accept": "application/json"})
-        with _urlreq.urlopen(req, timeout=8) as r:
-            data     = json.loads(r.read().decode())
-        prefixes = data.get("prefixes", [])
-        # Each prefix looks like "carousels/single/slug/" — extract the slug part
-        slugs = []
-        for p in prefixes:
-            parts = p.rstrip("/").split("/")
-            if len(parts) >= 3:
-                slugs.append(parts[2])
-        return slugs
-    except Exception as e:
-        print(f"[library] Firebase list error ({format_name}): {e}")
-        return []
+    def _fetch():
+        try:
+            prefix   = _urlparse.quote(f"carousels/{format_name}/", safe="")
+            url      = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
+                        f"/o?prefix={prefix}&delimiter=%2F")
+            req      = _urlreq.Request(url, headers={"Accept": "application/json"})
+            with _urlreq.urlopen(req, timeout=8) as r:
+                data     = json.loads(r.read().decode())
+            prefixes = data.get("prefixes", [])
+            slugs = []
+            for p in prefixes:
+                parts = p.rstrip("/").split("/")
+                if len(parts) >= 3:
+                    slugs.append(parts[2])
+            return slugs
+        except Exception as e:
+            print(f"[library] Firebase list error ({format_name}): {e}")
+            return []
+    return _firebase_cached(f"slugs:{format_name}", _fetch)
 
 
 def _firebase_list_slides(format_name: str, slug: str) -> list:
     """List all slide filenames for a given carousel slug in Firebase Storage."""
-    try:
-        prefix = _urlparse.quote(f"carousels/{format_name}/{slug}/slides/", safe="")
-        url    = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
-                  f"/o?prefix={prefix}")
-        req    = _urlreq.Request(url, headers={"Accept": "application/json"})
-        with _urlreq.urlopen(req, timeout=8) as r:
-            data   = json.loads(r.read().decode())
-        items  = data.get("items", [])
-        # Extract just the filename from the full storage path
-        fnames = sorted(
-            item["name"].split("/")[-1]
-            for item in items
-            if item["name"].endswith(".png")
-        )
-        return fnames
-    except Exception as e:
-        print(f"[library] Firebase slides error ({format_name}/{slug}): {e}")
-        return []
+    def _fetch():
+        try:
+            prefix = _urlparse.quote(f"carousels/{format_name}/{slug}/slides/", safe="")
+            url    = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
+                      f"/o?prefix={prefix}")
+            req    = _urlreq.Request(url, headers={"Accept": "application/json"})
+            with _urlreq.urlopen(req, timeout=8) as r:
+                data   = json.loads(r.read().decode())
+            items  = data.get("items", [])
+            fnames = sorted(
+                item["name"].split("/")[-1]
+                for item in items
+                if item["name"].endswith(".png")
+            )
+            return fnames
+        except Exception as e:
+            print(f"[library] Firebase slides error ({format_name}/{slug}): {e}")
+            return []
+    return _firebase_cached(f"slides:{format_name}:{slug}", _fetch)
 
 
 def _slug_to_title(slug: str) -> str:
@@ -1684,7 +1700,13 @@ def _slug_to_title(slug: str) -> str:
 
 @app.get("/api/library")
 def api_library(format: Optional[str] = None):
-    """List all generated carousels — local first, then Firebase Storage."""
+    """List all generated carousels — local first, then Firebase Storage.
+    Results are cached for 2 minutes to avoid repeated Firebase round-trips."""
+    cache_key = f"library:{format or 'all'}"
+    entry = _firebase_cache.get(cache_key)
+    if entry and (time.time() - entry[0]) < _FIREBASE_CACHE_TTL:
+        return entry[1]
+
     def _scan_local(base_dir: str, fmt: str):
         out = []
         if not os.path.isdir(base_dir):
@@ -1767,7 +1789,9 @@ def api_library(format: Optional[str] = None):
         comp.sort(key=lambda x: x["modified_at"], reverse=True)
         items.extend(comp[:LIBRARY_LIMIT_PER_FORMAT])
 
-    return {"items": items}
+    result = {"items": items}
+    _firebase_cache[cache_key] = (time.time(), result)
+    return result
 
 
 @app.get("/api/debug-paths")
