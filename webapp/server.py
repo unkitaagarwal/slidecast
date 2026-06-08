@@ -55,11 +55,13 @@ ASSETS_COMP   = os.path.join(ROOT, "assets", "Compilation", "output_compilations
 # Firebase Storage — images uploaded via upload_assets_to_firebase.py are
 # served directly from the CDN instead of the local filesystem.
 FIREBASE_STORAGE_BUCKET = "slidecast-75f5c.firebasestorage.app"
-FIREBASE_STORAGE_BASE   = f"https://storage.googleapis.com/{FIREBASE_STORAGE_BUCKET}"
+FIREBASE_STORAGE_BASE   = f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
 
 def _firebase_url(format_name: str, slug: str, filename: str) -> str:
-    """Return a Firebase Storage public CDN URL for a carousel slide."""
-    return f"{FIREBASE_STORAGE_BASE}/carousels/{format_name}/{slug}/slides/{filename}"
+    """Return a Firebase Storage download URL for a carousel slide."""
+    import urllib.parse as _up
+    path = f"carousels/{format_name}/{slug}/slides/{filename}"
+    return f"{FIREBASE_STORAGE_BASE}/o/{_up.quote(path, safe='')}?alt=media"
 
 def _is_assets_source(base_dir: str) -> bool:
     """True when the base directory is one of the bundled assets folders
