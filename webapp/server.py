@@ -55,11 +55,13 @@ ASSETS_COMP   = os.path.join(ROOT, "assets", "Compilation", "output_compilations
 # Firebase Storage — images uploaded via upload_assets_to_firebase.py are
 # served directly from the CDN instead of the local filesystem.
 FIREBASE_STORAGE_BUCKET = "slidecast-75f5c.firebasestorage.app"
-FIREBASE_STORAGE_BASE   = f"https://storage.googleapis.com/{FIREBASE_STORAGE_BUCKET}"
+FIREBASE_STORAGE_BASE   = f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
 
 def _firebase_url(format_name: str, slug: str, filename: str) -> str:
-    """Return a Firebase Storage public CDN URL for a carousel slide."""
-    return f"{FIREBASE_STORAGE_BASE}/carousels/{format_name}/{slug}/slides/{filename}"
+    """Return a Firebase Storage download URL for a carousel slide."""
+    import urllib.parse as _up
+    path = f"carousels/{format_name}/{slug}/slides/{filename}"
+    return f"{FIREBASE_STORAGE_BASE}/o/{_up.quote(path, safe='')}?alt=media"
 
 def _is_assets_source(base_dir: str) -> bool:
     """True when the base directory is one of the bundled assets folders
@@ -827,6 +829,30 @@ AUX_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 # Pipeline wrappers (run in worker threads)
 # ---------------------------------------------------------------------------
 
+import re as _re_mod
+
+_FRIENDLY_PHRASES = [
+    "Warming up the creative engine…",
+    "Picking the perfect color palette…",
+    "Writing scroll-stopping hooks…",
+    "Designing each slide layout…",
+    "Adding the finishing touches…",
+    "Making it look effortless…",
+    "Almost there — polishing your slides…",
+    "Wrapping it all up…",
+    "Saving your masterpiece…",
+    "Just a moment more…",
+]
+
+
+def _friendly_progress(raw_msg: str, step_counter: list) -> str:
+    """Rewrite internal pipeline messages into casual, user-friendly copy."""
+    # Cycle through friendly phrases on each call
+    idx = step_counter[0] % len(_FRIENDLY_PHRASES)
+    step_counter[0] += 1
+    return _FRIENDLY_PHRASES[idx]
+
+
 class _JobCancelledError(Exception):
     """Raised inside a pipeline worker when the user cancels the job."""
 
@@ -839,12 +865,17 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
         # Stream phase-by-phase progress into the job record so the UI's
         # idle-timeout reset has real heartbeats to work with.
         # Also check for user cancellation on every progress tick.
+        # Rewrites technical messages into friendly UI copy.
+        _single_step = [0]
         def _on_progress(msg: str) -> None:
             if JOBS.is_cancelled(job_id):
                 raise _JobCancelledError("Job cancelled by user")
-            JOBS.update(job_id, message=msg)
+            friendly = _friendly_progress(msg, _single_step)
+            JOBS.update(job_id, message=friendly)
 
         rdir   = single.run_one_recipe(brief, progress_cb=_on_progress)
+        if JOBS.is_cancelled(job_id):
+            raise _JobCancelledError("Job cancelled by user")
         slug   = os.path.basename(rdir)
         slides = sorted(
             f for f in os.listdir(os.path.join(rdir, "slides"))
@@ -861,6 +892,10 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
         except Exception as _e:
             print(f"  [caption] build failed: {_e}")
 
+        # Check cancel before expensive upload
+        if JOBS.is_cancelled(job_id):
+            raise _JobCancelledError("Job cancelled by user")
+
         # Upload to Firebase Storage + log to Firestore
         JOBS.update(job_id, message="Uploading your slides to the cloud…")
         slide_urls = _upload_slides_and_log(
@@ -871,7 +906,7 @@ def _run_single(job_id: str, brief: str, user_email: Optional[str] = None):
             theme          = brief,
             slide_filenames= slides,
             caption        = caption,
-            progress_cb    = lambda msg: JOBS.update(job_id, message=msg),
+            progress_cb    = _on_progress,
         )
 
         # Clean up local output dir — slides are in Firebase, no need to keep them on disk
@@ -915,12 +950,17 @@ def _run_compilation(job_id: str, theme: str,
         # so the UI's poller (and its idle-timeout reset) sees real heartbeats
         # instead of one silent ~8-minute block.
         # Also check for user cancellation on every progress tick.
+        # Rewrites technical messages into friendly UI copy.
+        _comp_step = [0]
         def _on_progress(msg: str) -> None:
             if JOBS.is_cancelled(job_id):
                 raise _JobCancelledError("Job cancelled by user")
-            JOBS.update(job_id, message=msg)
+            friendly = _friendly_progress(msg, _comp_step)
+            JOBS.update(job_id, message=friendly)
 
         cdir = comp.run_one_compilation(theme, progress_cb=_on_progress)
+        if JOBS.is_cancelled(job_id):
+            raise _JobCancelledError("Job cancelled by user")
         slug = os.path.basename(cdir)
         slides = sorted(
             f for f in os.listdir(os.path.join(cdir, "slides"))
@@ -937,6 +977,10 @@ def _run_compilation(job_id: str, theme: str,
         except Exception as _e:
             print(f"  [caption] build failed: {_e}")
 
+        # Check cancel before expensive upload
+        if JOBS.is_cancelled(job_id):
+            raise _JobCancelledError("Job cancelled by user")
+
         # Upload to Firebase Storage + log to Firestore
         JOBS.update(job_id, message="Uploading your slides to the cloud…")
         slide_urls = _upload_slides_and_log(
@@ -947,7 +991,7 @@ def _run_compilation(job_id: str, theme: str,
             theme          = theme,
             slide_filenames= slides,
             caption        = caption,
-            progress_cb    = lambda msg: JOBS.update(job_id, message=msg),
+            progress_cb    = _on_progress,
         )
 
         # Clean up local output dir — slides are in Firebase, no need to keep them on disk
@@ -1588,49 +1632,65 @@ def api_branding():
     return _load_branding()
 
 
+_firebase_cache = {}  # key -> (timestamp, data)
+_FIREBASE_CACHE_TTL = 120  # seconds
+
+
+def _firebase_cached(key, fetcher):
+    """Return cached result if fresh, otherwise call fetcher and cache it."""
+    entry = _firebase_cache.get(key)
+    if entry and (time.time() - entry[0]) < _FIREBASE_CACHE_TTL:
+        return entry[1]
+    result = fetcher()
+    _firebase_cache[key] = (time.time(), result)
+    return result
+
+
 def _firebase_list_slugs(format_name: str) -> list:
     """Query Firebase Storage REST API to list all carousel slugs for a format.
     Returns list of slug strings. No auth needed — bucket is public read."""
-    try:
-        prefix   = _urlparse.quote(f"carousels/{format_name}/", safe="")
-        url      = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
-                    f"/o?prefix={prefix}&delimiter=%2F")
-        req      = _urlreq.Request(url, headers={"Accept": "application/json"})
-        with _urlreq.urlopen(req, timeout=8) as r:
-            data     = json.loads(r.read().decode())
-        prefixes = data.get("prefixes", [])
-        # Each prefix looks like "carousels/single/slug/" — extract the slug part
-        slugs = []
-        for p in prefixes:
-            parts = p.rstrip("/").split("/")
-            if len(parts) >= 3:
-                slugs.append(parts[2])
-        return slugs
-    except Exception as e:
-        print(f"[library] Firebase list error ({format_name}): {e}")
-        return []
+    def _fetch():
+        try:
+            prefix   = _urlparse.quote(f"carousels/{format_name}/", safe="")
+            url      = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
+                        f"/o?prefix={prefix}&delimiter=%2F")
+            req      = _urlreq.Request(url, headers={"Accept": "application/json"})
+            with _urlreq.urlopen(req, timeout=8) as r:
+                data     = json.loads(r.read().decode())
+            prefixes = data.get("prefixes", [])
+            slugs = []
+            for p in prefixes:
+                parts = p.rstrip("/").split("/")
+                if len(parts) >= 3:
+                    slugs.append(parts[2])
+            return slugs
+        except Exception as e:
+            print(f"[library] Firebase list error ({format_name}): {e}")
+            return []
+    return _firebase_cached(f"slugs:{format_name}", _fetch)
 
 
 def _firebase_list_slides(format_name: str, slug: str) -> list:
     """List all slide filenames for a given carousel slug in Firebase Storage."""
-    try:
-        prefix = _urlparse.quote(f"carousels/{format_name}/{slug}/slides/", safe="")
-        url    = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
-                  f"/o?prefix={prefix}")
-        req    = _urlreq.Request(url, headers={"Accept": "application/json"})
-        with _urlreq.urlopen(req, timeout=8) as r:
-            data   = json.loads(r.read().decode())
-        items  = data.get("items", [])
-        # Extract just the filename from the full storage path
-        fnames = sorted(
-            item["name"].split("/")[-1]
-            for item in items
-            if item["name"].endswith(".png")
-        )
-        return fnames
-    except Exception as e:
-        print(f"[library] Firebase slides error ({format_name}/{slug}): {e}")
-        return []
+    def _fetch():
+        try:
+            prefix = _urlparse.quote(f"carousels/{format_name}/{slug}/slides/", safe="")
+            url    = (f"https://firebasestorage.googleapis.com/v0/b/{FIREBASE_STORAGE_BUCKET}"
+                      f"/o?prefix={prefix}")
+            req    = _urlreq.Request(url, headers={"Accept": "application/json"})
+            with _urlreq.urlopen(req, timeout=8) as r:
+                data   = json.loads(r.read().decode())
+            items  = data.get("items", [])
+            fnames = sorted(
+                item["name"].split("/")[-1]
+                for item in items
+                if item["name"].endswith(".png")
+            )
+            return fnames
+        except Exception as e:
+            print(f"[library] Firebase slides error ({format_name}/{slug}): {e}")
+            return []
+    return _firebase_cached(f"slides:{format_name}:{slug}", _fetch)
 
 
 def _slug_to_title(slug: str) -> str:
@@ -1640,7 +1700,13 @@ def _slug_to_title(slug: str) -> str:
 
 @app.get("/api/library")
 def api_library(format: Optional[str] = None):
-    """List all generated carousels — local first, then Firebase Storage."""
+    """List all generated carousels — local first, then Firebase Storage.
+    Results are cached for 2 minutes to avoid repeated Firebase round-trips."""
+    cache_key = f"library:{format or 'all'}"
+    entry = _firebase_cache.get(cache_key)
+    if entry and (time.time() - entry[0]) < _FIREBASE_CACHE_TTL:
+        return entry[1]
+
     def _scan_local(base_dir: str, fmt: str):
         out = []
         if not os.path.isdir(base_dir):
@@ -1723,7 +1789,9 @@ def api_library(format: Optional[str] = None):
         comp.sort(key=lambda x: x["modified_at"], reverse=True)
         items.extend(comp[:LIBRARY_LIMIT_PER_FORMAT])
 
-    return {"items": items}
+    result = {"items": items}
+    _firebase_cache[cache_key] = (time.time(), result)
+    return result
 
 
 @app.get("/api/debug-paths")

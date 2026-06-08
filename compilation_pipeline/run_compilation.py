@@ -124,11 +124,7 @@ def run_one_compilation(theme: str, progress_cb=None) -> str:
     def _emit(msg: str) -> None:
         if progress_cb is None:
             return
-        try:
-            progress_cb(msg)
-        except Exception as _e:
-            # Never let a UI callback crash the pipeline
-            print(f"  [progress_cb] swallowed: {_e}")
+        progress_cb(msg)  # let cancellation exceptions propagate
 
     print(f"\n=== {theme} ===")
     _emit("Brainstorming your hook + 5 items (this usually takes 1-2 minutes)…")

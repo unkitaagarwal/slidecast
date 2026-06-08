@@ -585,9 +585,12 @@
     const total = allItems.length;
     const single = allItems.filter((i) => i.format === 'single').length;
     const comp = allItems.filter((i) => i.format === 'compilation').length;
-    animateCounter($('#stat-total'), total);
-    animateCounter($('#stat-single'), single);
-    animateCounter($('#stat-comp'), comp);
+    const elTotal  = $('#stat-total');
+    const elSingle = $('#stat-single');
+    const elComp   = $('#stat-comp');
+    if (elTotal)  animateCounter(elTotal, total);
+    if (elSingle) animateCounter(elSingle, single);
+    if (elComp)   animateCounter(elComp, comp);
   }
 
   // ---------- Phone deck (real TikTok-style cycling) ----------
@@ -601,23 +604,28 @@
 
     // Pick 1 compilation and rotate through its 12 slides — looks more like
     // a real TikTok carousel.
-    const comps = allItems.filter((i) => i.format === 'compilation');
-    if (comps.length === 0) return;
-    const pick = comps[Math.floor(Math.random() * Math.min(comps.length, 20))];
+    let candidates = allItems.filter((i) => i.format === 'compilation');
+    if (candidates.length === 0) candidates = allItems.filter((i) => i.format === 'single');
+    if (candidates.length === 0) return;
+    const pick = candidates[Math.floor(Math.random() * Math.min(candidates.length, 20))];
 
-    // Load full slide list for that compilation
+    // Load full slide list for that carousel
     let slides = [];
     let title = pick.title;
     try {
-      const res = await fetch(`/api/preview/compilation/${pick.slug}`);
+      const res = await fetch(`/api/preview/${pick.format}/${pick.slug}`);
       if (res.ok) {
         const data = await res.json();
-        slides = data.slides;
-        title = data.title;
+        slides = (data.slides || []).filter(Boolean);
+        title = data.title || title;
       }
-    } catch (e) { console.warn(e); }
-    if (slides.length === 0) {
+    } catch (e) { console.warn('[phone-deck] preview fetch failed:', e); }
+    if (slides.length === 0 && pick.thumbnail) {
       slides = [pick.thumbnail];
+    }
+    if (slides.length === 0) {
+      console.warn('[phone-deck] no slides found for', pick.slug);
+      return;
     }
 
     captionEl.textContent = title;
