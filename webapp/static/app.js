@@ -3,7 +3,8 @@
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
 
-  const promptEl = $('#prompt');
+  const promptFields = $('#prompt-fields');
+  const promptAddBtn = $('#prompt-add');
   const generateBtn = $('#generate-btn');
   const jobPanel = $('#job-panel');
   const jobTitle = $('#job-title');
@@ -38,7 +39,6 @@
   // `selectedFmt` and both stay visually in sync via setFormat().
   const formatSelectEl = $('#prompt-format');
   const promptClearBtn = $('#prompt-clear');
-  const promptCharEl   = $('#prompt-char');
 
   function setFormat(fmt) {
     if (!fmt) return;
@@ -71,46 +71,136 @@
     formatSelectEl.addEventListener('change', (e) => setFormat(e.target.value));
   }
 
-  // Character counter — updates live, capped by maxlength on the element
-  function updateCharCount() {
-    if (!promptCharEl) return;
-    promptCharEl.textContent = String((promptEl.value || '').length);
-  }
-  if (promptEl) {
-    promptEl.addEventListener('input', updateCharCount);
-    updateCharCount();
+  const promptLinesEl = $('#prompt-lines');
+  const promptLinesPluralEl = $('#prompt-lines-plural');
+  const MAX_FIELDS = 12;
+
+  // ---------- Dynamic prompt fields ----------
+  // Each prompt lives in its own row. Users add as many as they need; every
+  // non-empty field becomes its own slideshow, all generated in parallel.
+
+  // Collect the trimmed, non-empty prompts across all fields.
+  function parsePrompts() {
+    return Array.from(promptFields.querySelectorAll('.prompt-field'))
+      .map((el) => (el.value || '').trim())
+      .filter(Boolean);
   }
 
-  // Clear prompt button — empties the textarea and refocuses
+  // Renumber the row badges and update the counter + Add-button state.
+  function refreshFields() {
+    const rows = promptFields.querySelectorAll('.prompt-field-row');
+    rows.forEach((row, i) => {
+      const num = row.querySelector('.prompt-field-num');
+      // Don't clobber the spinner / tick / cross shown during & after a run.
+      if (num && (row.dataset.state || 'idle') === 'idle') {
+        num.className = 'prompt-field-num';
+        num.textContent = String(i + 1);
+      }
+      // Only show the remove button when there's more than one row (idle only).
+      const rm = row.querySelector('.prompt-field-remove');
+      if (rm) rm.style.visibility =
+        (rows.length > 1 && (row.dataset.state || 'idle') === 'idle') ? 'visible' : '';
+    });
+    if (promptLinesEl) promptLinesEl.textContent = String(rows.length);
+    if (promptLinesPluralEl) promptLinesPluralEl.textContent = rows.length === 1 ? '' : 's';
+    if (promptAddBtn) promptAddBtn.disabled = rows.length >= MAX_FIELDS;
+  }
+
+  // Create one prompt row. Returns the textarea element.
+  function addField(value = '', { focus = false } = {}) {
+    const rows = promptFields.querySelectorAll('.prompt-field-row');
+    if (rows.length >= MAX_FIELDS) return null;
+    const row = document.createElement('div');
+    row.className = 'prompt-field-row';
+    row.dataset.state = 'idle';
+    row.innerHTML = `
+      <span class="prompt-field-num">1</span>
+      <div class="prompt-field-body">
+        <textarea class="prompt-field" rows="1" maxlength="500"
+          placeholder="Describe a slideshow… e.g. &quot;5 habits that quietly wreck your sleep&quot;"
+          autocomplete="off"></textarea>
+        <div class="prompt-field-progress hidden"><div class="job-bar"><div class="job-bar-fill" style="width:4%"></div></div></div>
+        <div class="prompt-field-msg hidden"></div>
+      </div>
+      <div class="prompt-field-actions">
+        <button class="btn-ghost prompt-field-download hidden" type="button" title="Download slides">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Download
+        </button>
+        <button class="btn-ghost prompt-field-cancel hidden" type="button" title="Cancel">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          Cancel
+        </button>
+        <button class="prompt-field-remove" type="button" title="Remove this prompt" aria-label="Remove this prompt">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>`;
+    const ta = row.querySelector('.prompt-field');
+    ta.value = value;
+    // Auto-grow the textarea as the user types.
+    const autoGrow = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px`; };
+    ta.addEventListener('input', autoGrow);
+    // Cmd/Ctrl+Enter submits the whole batch; plain Enter inserts a newline.
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        startGeneration();
+      }
+    });
+    row.querySelector('.prompt-field-remove').addEventListener('click', () => {
+      row.remove();
+      // Never leave zero fields — keep at least one empty row.
+      if (promptFields.querySelectorAll('.prompt-field-row').length === 0) addField();
+      refreshFields();
+    });
+    promptFields.appendChild(row);
+    refreshFields();
+    requestAnimationFrame(autoGrow);
+    if (focus) ta.focus();
+    return ta;
+  }
+
+  // Put a value into the first empty field, or add a new one if all are full.
+  function fillNextField(value) {
+    const empty = Array.from(promptFields.querySelectorAll('.prompt-field'))
+      .find((el) => !(el.value || '').trim());
+    if (empty) {
+      empty.value = value;
+      empty.dispatchEvent(new Event('input'));
+      empty.focus();
+      return empty;
+    }
+    return addField(value, { focus: true });
+  }
+
+  // Seed the first field on load.
+  addField();
+
+  if (promptAddBtn) {
+    promptAddBtn.addEventListener('click', () => addField('', { focus: true }));
+  }
+
+  // Clear button — reset to a single empty field.
   if (promptClearBtn) {
     promptClearBtn.addEventListener('click', () => {
-      promptEl.value = '';
-      updateCharCount();
-      promptEl.focus();
+      promptFields.innerHTML = '';
+      addField('', { focus: true });
     });
   }
 
   // ---------- Example chips ----------
   $$('.chip').forEach((chip) => {
     chip.addEventListener('click', () => {
-      promptEl.value = chip.dataset.chip;
-      updateCharCount();
+      // Drop the example into the next open field, building up a batch.
+      fillNextField(chip.dataset.chip);
       const fmt = chip.dataset.fmt;
       if (fmt) setFormat(fmt);
-      promptEl.focus();
     });
   });
 
   // ---------- Generate ----------
   generateBtn.addEventListener('click', startGeneration);
-  // Textarea-friendly Enter behaviour: bare Enter inserts a newline (default),
-  // Cmd/Ctrl+Enter submits. Matches what people expect from chat-style boxes.
-  promptEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      startGeneration();
-    }
-  });
+  // (Per-field Cmd/Ctrl+Enter also submits — wired up in addField.)
 
   // Smarter status messages — rotate as job runs
   const STAGE_MESSAGES_COMP = [
@@ -128,237 +218,207 @@
     'Wrapping it up…',
   ];
 
+  // SVG glyphs for the row status badge.
+  const _ICON_CHECK = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>`;
+  const _ICON_CROSS = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
+
+  // Drive a single prompt row's badge, progress bar, message, and action buttons.
+  function setRowState(row, state, msg) {
+    row.dataset.state = state;
+    const num   = row.querySelector('.prompt-field-num');
+    const prog  = row.querySelector('.prompt-field-progress');
+    const msgEl = row.querySelector('.prompt-field-msg');
+    const cancel= row.querySelector('.prompt-field-cancel');
+    const remove= row.querySelector('.prompt-field-remove');
+    const dl    = row.querySelector('.prompt-field-download');
+    if (msg != null) { msgEl.textContent = msg; msgEl.classList.remove('hidden'); }
+
+    const running = state === 'pending' || state === 'running';
+    prog.classList.toggle('hidden', !running);
+    cancel.classList.toggle('hidden', !running);
+    remove.classList.toggle('hidden', running);
+
+    if (running) {
+      num.className = 'prompt-field-num spinning';
+      num.innerHTML = '';
+      dl.classList.add('hidden');
+      msgEl.classList.remove('hidden', 'is-error', 'is-ok');
+    } else if (state === 'done') {
+      num.className = 'prompt-field-num done';
+      num.innerHTML = _ICON_CHECK;
+      dl.classList.remove('hidden');
+      msgEl.classList.add('is-ok');
+      msgEl.classList.remove('is-error');
+    } else if (state === 'failed' || state === 'cancelled') {
+      num.className = 'prompt-field-num failed';
+      num.innerHTML = _ICON_CROSS;
+      dl.classList.add('hidden');
+      msgEl.classList.add('is-error');
+      msgEl.classList.remove('is-ok');
+    }
+  }
+
+  // Entry point wired to the Generate button. Each non-empty field becomes its
+  // own job; all run in parallel with progress shown inline under the field.
   async function startGeneration() {
-    const prompt = (promptEl.value || '').trim();
-    if (!prompt) {
-      promptEl.focus();
+    const rows = Array.from(promptFields.querySelectorAll('.prompt-field-row'))
+      .filter((r) => (r.querySelector('.prompt-field').value || '').trim());
+    if (rows.length === 0) {
+      const first = promptFields.querySelector('.prompt-field');
+      if (first) first.focus();
       return;
     }
-    _cancelRequested = false;
+
+    const fmt = selectedFmt;
     generateBtn.disabled = true;
     generateBtn.querySelector('svg')?.style && (generateBtn.querySelector('svg').style.opacity = '0');
-    generateBtn.firstChild && (generateBtn.firstChild.nodeValue = 'Generating');
+    generateBtn.firstChild && (generateBtn.firstChild.nodeValue =
+      rows.length > 1 ? `Generating ${rows.length}` : 'Generating');
+    if (promptAddBtn) promptAddBtn.disabled = true;
+    if (promptClearBtn) promptClearBtn.disabled = true;
 
-    // Show cancel button in an enabled, ready state
-    if (cancelBtn) {
-      cancelBtn.disabled = false;
-      cancelBtn.style.display = '';
-    }
+    // Legacy single-result panels are unused in the inline flow.
+    if (jobPanel) jobPanel.classList.add('hidden');
+    if (resultPanel) resultPanel.classList.add('hidden');
 
-    resultPanel.classList.add('hidden');
-    jobPanel.classList.remove('hidden');
-    jobPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    jobTitle.textContent = 'Sending to pipeline…';
-    jobMsg.textContent = `Format: ${selectedFmt}`;
-    jobBar.style.width = '4%';
+    const _scUser = JSON.parse(localStorage.getItem('sc_user') || '{}');
+    const userEmail = _scUser.email || null;
 
-    try {
-      // Pass signed-in user email so the server can log to Firestore
-      const _scUser = JSON.parse(localStorage.getItem('sc_user') || '{}');
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          format:     selectedFmt,
-          input:      prompt,
-          user_email: _scUser.email || null,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`HTTP ${res.status}: ${err}`);
-      }
-      const data = await res.json();
-      const jobId = data.job_id;
-      jobTitle.textContent = 'Working';
-      jobMsg.textContent = `Job ${jobId} accepted`;
-      pollJob(jobId);
-    } catch (e) {
-      jobTitle.textContent = 'Failed';
-      jobMsg.textContent = String(e);
-      restoreGenerateBtn();
-    }
+    await Promise.allSettled(rows.map((r) => generateOne(r, fmt, userEmail)));
+
+    restoreGenerateBtn();
+    refreshFields();
+    refreshLibrary();
   }
 
   function restoreGenerateBtn() {
     generateBtn.disabled = false;
     generateBtn.innerHTML = `Generate <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>`;
-    // Hide cancel button once generation is done/failed/cancelled
+    if (promptAddBtn) promptAddBtn.disabled =
+      promptFields.querySelectorAll('.prompt-field-row').length >= MAX_FIELDS;
+    if (promptClearBtn) promptClearBtn.disabled = false;
     if (cancelBtn) cancelBtn.style.display = 'none';
   }
 
-  async function pollJob(jobId) {
-    // Format-aware wall-clock cap. Compilation = 5 recipes + 6 images + 12 slides
-    // and routinely runs 8-12 min on Render; single is much quicker.
-    // The cap also RESETS whenever the server's message field changes, so as
-    // long as the pipeline is making forward progress we won't time out.
-    const MAX_IDLE_MS = selectedFmt === 'compilation' ? 15 * 60 * 1000 : 8 * 60 * 1000;
+  // Submit one prompt (from its row), then poll its job, updating the row inline.
+  async function generateOne(row, fmt, userEmail) {
+    const ta = row.querySelector('.prompt-field');
+    const prompt = (ta.value || '').trim();
+    const barFill = row.querySelector('.job-bar-fill');
+    if (barFill) barFill.style.width = '4%';
+    ta.readOnly = true;
+    let jobId = null;
+
+    // Per-row cancel
+    const cancelBtnEl = row.querySelector('.prompt-field-cancel');
+    cancelBtnEl.onclick = async () => {
+      if (!jobId) return;
+      cancelBtnEl.disabled = true;
+      setRowState(row, 'running', 'Cancelling…');
+      try { await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' }); }
+      catch (e) { console.warn('Cancel failed:', e); }
+    };
+
+    setRowState(row, 'pending', 'Queued…');
+
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: fmt, input: prompt, user_email: userEmail }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      jobId = (await res.json()).job_id;
+    } catch (e) {
+      setRowState(row, 'failed', String(e));
+      if (barFill) barFill.style.width = '0%';
+      ta.readOnly = false;
+      return;
+    }
+
+    await pollRow(jobId, row, fmt);
+    ta.readOnly = false;
+  }
+
+  // Poll a single job and drive its row's progress bar, message, and download.
+  async function pollRow(jobId, row, fmt) {
+    const barFill = row.querySelector('.job-bar-fill');
+    const cancelBtnEl = row.querySelector('.prompt-field-cancel');
+    const MAX_IDLE_MS = fmt === 'compilation' ? 15 * 60 * 1000 : 8 * 60 * 1000;
+    const messages = fmt === 'compilation' ? STAGE_MESSAGES_COMP : STAGE_MESSAGES_SINGLE;
     let lastActivity = Date.now();
     let lastServerMsg = '';
     let progress = 8;
     let stageIdx = 0;
-    const messages = selectedFmt === 'compilation' ? STAGE_MESSAGES_COMP : STAGE_MESSAGES_SINGLE;
-
-    // Wire up the cancel button for this job
-    async function requestCancel() {
-      if (cancelBtn) {
-        cancelBtn.disabled = true;
-        cancelBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-6.22-8.56"/></svg> Cancelling…`;
-      }
-      _cancelRequested = true;
-      jobTitle.textContent = 'Cancelling…';
-      jobMsg.textContent = 'Sending cancel request to server…';
-      try {
-        await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
-      } catch (e) {
-        console.warn('Cancel request failed:', e);
-      }
-    }
-    if (cancelBtn) cancelBtn.onclick = requestCancel;
 
     while (true) {
       await new Promise((r) => setTimeout(r, 1500));
       progress = Math.min(progress + 3, 92);
-      jobBar.style.width = `${progress}%`;
+      if (barFill && row.dataset.state !== 'done') barFill.style.width = `${progress}%`;
 
-      // Cycle through stage messages only until the server gives us a real
-      // status. After that, keep the UI grounded in backend state.
       if (!lastServerMsg && Math.random() < 0.45 && stageIdx < messages.length) {
-        jobMsg.textContent = messages[stageIdx];
+        setRowState(row, 'running', messages[stageIdx]);
         stageIdx += 1;
       }
 
+      let j;
       try {
         const res = await fetch(`/api/jobs/${jobId}`);
-        if (!res.ok) {
-          jobTitle.textContent = 'Lost job';
-          jobMsg.textContent = 'Server error fetching job';
-          break;
-        }
-        const j = await res.json();
-        // Any change in the server message counts as forward progress —
-        // reset the idle timer so a slow-but-working pipeline isn't killed.
-        if (j.message && j.message !== lastServerMsg) {
-          lastServerMsg = j.message;
-          lastActivity = Date.now();
-        }
-        // Always prefer the server's live message over rotating placeholders.
-        if (j.message) jobMsg.textContent = j.message;
-        jobTitle.textContent = j.status === 'pending' ? 'Queued' : 'Working';
-
-        if (j.status === 'cancelled') {
-          jobBar.style.width = '0%';
-          jobTitle.textContent = 'Cancelled';
-          jobMsg.textContent = 'Generation was cancelled.';
-          break;
-        }
-        if (j.status === 'done') {
-          jobBar.style.width = '100%';
-          jobTitle.textContent = 'Ready';
-          jobMsg.textContent = j.result?.slide_urls?.length
-            ? '✓ Slides uploaded to Firebase — ready to download & share'
-            : 'Carousel composited and saved';
-          try {
-            await loadPreview(j.result.format, j.result.slug, j.result.slide_urls || []);
-          } catch (renderErr) {
-            console.error('renderResult error:', renderErr);
-            jobMsg.textContent = 'Done — slides saved' + (j.result?.slide_urls?.length ? ' & uploaded to Firebase' : '');
-          }
-          break;  // always break, even if preview rendering threw
-        }
-        if (j.status === 'failed') {
-          jobTitle.textContent = 'Failed';
-          jobMsg.textContent = j.error || j.message;
-          break;
-        }
+        if (!res.ok) { setRowState(row, 'failed', 'Server error fetching job'); break; }
+        j = await res.json();
       } catch (e) {
-        jobMsg.textContent = `Error: ${e}`;
+        setRowState(row, 'running', `Error: ${e}`);
+        if (Date.now() - lastActivity > MAX_IDLE_MS) break;
+        continue;
+      }
+
+      if (j.message && j.message !== lastServerMsg) {
+        lastServerMsg = j.message;
+        lastActivity = Date.now();
+      }
+      if (j.status !== 'done' && j.message) {
+        setRowState(row, j.status === 'pending' ? 'pending' : 'running', j.message);
+      }
+
+      if (j.status === 'cancelled') {
+        setRowState(row, 'cancelled', 'Cancelled.');
+        if (barFill) barFill.style.width = '0%';
+        break;
+      }
+      if (j.status === 'failed') {
+        setRowState(row, 'failed', j.error || j.message || 'Generation failed.');
+        break;
+      }
+      if (j.status === 'done') {
+        if (barFill) barFill.style.width = '100%';
+        setRowState(row, 'done', '✓ Ready to download');
+        attachDownload(row, j.result.format, j.result.slug, j.result.slide_urls || []);
+        break;
       }
 
       if (Date.now() - lastActivity > MAX_IDLE_MS) {
         const mins = Math.round(MAX_IDLE_MS / 60000);
-        jobTitle.textContent = 'Timed out';
-        jobMsg.textContent = `No progress for ${mins} minutes — check terminal logs (job may still be running on the server)`;
+        setRowState(row, 'failed', `No progress for ${mins} min — check server logs (job may still be running).`);
         break;
       }
     }
-
-    restoreGenerateBtn();
-    refreshLibrary();
   }
 
-  async function loadPreview(format, slug, slideUrls = []) {
-    const res = await fetch(`/api/preview/${format}/${slug}`);
-    if (!res.ok) {
-      alert('Preview failed');
-      return;
-    }
-    const data = await res.json();
-    // Attach Firebase URLs from the job result if available
-    if (slideUrls.length) data.slide_urls = slideUrls;
-    renderResult(data);
+  // Wire the row's Download button to the server-built ZIP for that carousel.
+  function attachDownload(row, format, slug, urls) {
+    const dl = row.querySelector('.prompt-field-download');
+    dl.onclick = () => _downloadSlidesZip(format, slug, urls, dl);
   }
 
-  function renderResult(data) {
-    currentResult = data;
-    resultPanel.classList.remove('hidden');
-    resultTitle.textContent = data.title || data.slug;
-    resultSubtitle.textContent = data.subtitle || '';
-    captionText.textContent = data.caption || '';
-
-    slidesGrid.innerHTML = '';
-    data.slides.forEach((url, i) => {
-      const t = document.createElement('div');
-      t.className = 'thumb';
-      t.innerHTML = `<span class="thumb-num">${String(i + 1).padStart(2, '0')}</span>`;
-      const img = document.createElement('img');
-      img.src = url;
-      img.loading = 'lazy';
-      t.appendChild(img);
-      t.addEventListener('click', () => openLightbox(url));
-      slidesGrid.appendChild(t);
-    });
-
-    // ── Download / path row ──────────────────────────────────────────────────
-    // Re-query each time in case the DOM was built after script init
-    const _dlBtn    = downloadZipEl    || document.getElementById('download-zip');
-    const _folderEl = openFolderEl     || document.getElementById('open-folder');
-    const firebaseUrls = data.slide_urls || [];
-    if (firebaseUrls.length) {
-      // Firebase URLs available → show Download slides button
-      if (_dlBtn)    { _dlBtn.style.display    = 'inline-flex'; _dlBtn.onclick = () => _downloadSlidesZip(data.slug, firebaseUrls); }
-      if (_folderEl) { _folderEl.style.display = 'none'; }
-    } else {
-      // Fallback: show local path tag
-      if (_dlBtn)    { _dlBtn.style.display    = 'none'; }
-      if (_folderEl) {
-        const folderRel = data.format === 'single'
-          ? `output/${data.slug}/slides/`
-          : `output_compilations/${data.slug}/slides/`;
-        _folderEl.style.display = '';
-        _folderEl.title         = folderRel;
-        _folderEl.textContent   = folderRel;
-      }
-    }
-
-    setTimeout(() => resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
-  }
-
-  // Download all slides + caption.txt + metadata.json as a single ZIP
-  async function _downloadSlidesZip(slug, urls) {
-    const _btn = downloadZipEl || document.getElementById('download-zip');
-    if (!_btn) return;
-
-    const _origHTML = _btn.innerHTML;
-    _btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-6.22-8.56"/></svg> Zipping…`;
-    _btn.style.pointerEvents = 'none';
-
+  // Download all slides + caption + metadata as a single ZIP for one carousel.
+  async function _downloadSlidesZip(format, slug, urls, btn) {
+    if (!btn) return;
+    const _origHTML = btn.innerHTML;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-6.22-8.56"/></svg> Zipping…`;
+    btn.style.pointerEvents = 'none';
     try {
-      // Server builds the ZIP (slides + caption.txt + metadata.json)
-      const format = currentResult?.format || 'compilation';
       const res = await fetch(`/api/download-zip/${format}/${slug}`);
       if (!res.ok) throw new Error(`Server ZIP failed: ${res.status}`);
-
       const blob = await res.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -369,25 +429,12 @@
       URL.revokeObjectURL(a.href);
     } catch (e) {
       console.error('ZIP download error:', e);
-      // Fallback: open slides individually in new tabs
-      (urls || []).forEach(u => window.open(u, '_blank'));
+      (urls || []).forEach((u) => window.open(u, '_blank'));
     } finally {
-      _btn.innerHTML = _origHTML;
-      _btn.style.pointerEvents = '';
+      btn.innerHTML = _origHTML;
+      btn.style.pointerEvents = '';
     }
   }
-
-  copyCaptionBtn.addEventListener('click', async () => {
-    if (!currentResult) return;
-    try {
-      await navigator.clipboard.writeText(currentResult.caption);
-      const original = copyCaptionBtn.innerHTML;
-      copyCaptionBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg> Copied`;
-      setTimeout(() => (copyCaptionBtn.innerHTML = original), 1500);
-    } catch (e) {
-      alert('Copy failed: ' + e);
-    }
-  });
 
   // ---------- Lightbox ----------
   function openLightbox(url) {

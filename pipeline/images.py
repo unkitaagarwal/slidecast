@@ -181,13 +181,19 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
     verbose = os.environ.get("GEMINI_IMAGE_VERBOSE", "").lower() in ("1", "true", "yes")
 
     # ── Tier 1: Gemini generate_content models ───────────────────────────────
-    # "gemini-2.5-flash-image" does NOT exist — the only valid native-image
-    # model in the generate_content API is gemini-2.0-flash-preview-image-generation.
+    # Native-image models available on the standard Gemini API (generateContent).
+    # "gemini-2.5-flash-image" (aka Nano Banana) is the current workhorse; the
+    # gemini-3 image models are newer fallbacks. The old
+    # "gemini-2.0-flash-preview-image-generation" name now 404s for new keys, so
+    # it's kept only as a last-ditch legacy fallback. Override with
+    # GEMINI_IMAGE_MODEL if your key exposes a different one.
     env_primary = os.environ.get("GEMINI_IMAGE_MODEL", "").strip()
     _GEMINI_MODELS = [
-        env_primary or "gemini-2.0-flash-preview-image-generation",
+        env_primary or "gemini-2.5-flash-image",
         model,  # caller override (if different from default)
-        "gemini-2.0-flash-exp",  # experimental fallback
+        "gemini-2.5-flash-image",
+        "gemini-3.1-flash-image",
+        "gemini-2.0-flash-preview-image-generation",  # legacy — 404s on new keys
     ]
     # deduplicate while preserving order, skip imagen- models (different API)
     seen = set()
@@ -233,7 +239,7 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
     # imagen-3.0-generate-002 is on the standard API tier.
     # imagen-4.0-fast-generate-001 requires a higher billing tier — skip it.
     _IMAGEN_MODELS = [
-        "imagen-3.0-generate-002",
+        "imagen-4.0-generate-001",
     ]
     for imagen_model in _IMAGEN_MODELS:
         try:
@@ -269,7 +275,7 @@ def generate_image(
     base_prompt: str,
     slide_type: str,
     output_path: str,
-    model: str = "gemini-2.0-flash-preview-image-generation",
+    model: str = "gemini-2.5-flash-image",
     size: str = "1024x1024",
     quality: str = "high",   # for gpt-image-1 family
     retries: int = 0,
