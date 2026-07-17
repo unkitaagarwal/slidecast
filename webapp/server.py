@@ -815,8 +815,12 @@ class BackgroundJobQueue:
 
 
 JOBS = JobStore()
-_DEFAULT_GENERATION_WORKERS = 1 if os.environ.get("RENDER") else 2
-_DEFAULT_GENERATION_QUEUE_SIZE = 4 if os.environ.get("RENDER") else 20
+# Multiple prompts submitted as a batch each become their own job. Run several
+# concurrently so a batch generates in parallel rather than strictly serially.
+# Render's shared CPU/memory is constrained, so keep its default conservative;
+# override either default with the GENERATION_WORKERS env var.
+_DEFAULT_GENERATION_WORKERS = 2 if os.environ.get("RENDER") else 4
+_DEFAULT_GENERATION_QUEUE_SIZE = 12 if os.environ.get("RENDER") else 32
 GENERATION_QUEUE = BackgroundJobQueue(
     "generation",
     workers=_env_int("GENERATION_WORKERS", _DEFAULT_GENERATION_WORKERS),

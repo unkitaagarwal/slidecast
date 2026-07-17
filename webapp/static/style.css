@@ -734,6 +734,85 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
   pointer-events: none;
 }
 
+/* ----- Dynamic prompt fields (one per prompt) ----- */
+.prompt-fields { display: flex; flex-direction: column; gap: 10px; }
+.prompt-field-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 12px 12px 14px;
+  transition: border-color 0.15s ease;
+}
+.prompt-field-row:focus-within { border-color: var(--border-2); }
+.prompt-field-num {
+  flex-shrink: 0; margin-top: 3px;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel-2); border: 1px solid var(--border);
+  color: var(--ink-2); font-size: 12px; font-weight: 700;
+}
+.prompt-field-body { flex: 1; min-width: 0; }
+.prompt-field {
+  width: 100%;
+  background: transparent; border: 0; outline: 0; resize: none;
+  color: var(--ink);
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 14px; font-weight: 400; line-height: 1.6;
+  overflow: hidden;
+  padding: 2px 0;
+}
+.prompt-field::placeholder { color: var(--ink-mute); }
+.prompt-field:read-only { opacity: 0.8; cursor: default; }
+
+/* Inline progress bar + status message shown under the field while running */
+.prompt-field-progress { margin-top: 10px; }
+.prompt-field-progress .job-bar { margin-top: 0; }
+.prompt-field-msg {
+  margin-top: 8px; font-size: 12px; color: var(--ink-dim);
+}
+.prompt-field-msg.is-ok    { color: #7bd88a; font-weight: 600; }
+.prompt-field-msg.is-error { color: #ff8a8a; }
+
+.prompt-field-actions { flex-shrink: 0; display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+.prompt-field-download { padding: 7px 12px; font-size: 12px; }
+.prompt-field-cancel   { padding: 7px 12px; font-size: 12px; }
+.prompt-field-remove {
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--ink-mute); padding: 4px; border-radius: 8px;
+  display: inline-flex; transition: all 0.15s ease;
+}
+.prompt-field-remove:hover { color: var(--coral); background: var(--panel-2); }
+
+/* Status badge morphs: number → spinner → green tick → red cross */
+.prompt-field-num.spinning {
+  border: 2px solid rgba(255, 92, 122, 0.2);
+  border-top-color: var(--coral);
+  background: transparent;
+  animation: spin 0.9s linear infinite;
+}
+.prompt-field-num.done {
+  background: rgba(120, 220, 150, 0.15);
+  border-color: rgba(120, 220, 150, 0.5);
+  color: #7bd88a;
+}
+.prompt-field-num.failed {
+  background: rgba(255, 120, 120, 0.12);
+  border-color: rgba(255, 120, 120, 0.45);
+  color: #ff8a8a;
+}
+.prompt-field-row[data-state="done"]   { border-color: rgba(120, 220, 150, 0.4); }
+.prompt-field-row[data-state="failed"],
+.prompt-field-row[data-state="cancelled"] { border-color: rgba(255, 120, 120, 0.35); }
+.prompt-fields-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 12px;
+}
+.prompt-fields-foot .prompt-char-count {
+  position: static; pointer-events: auto;
+}
+.btn-pill:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .prompt-hint {
   display: flex; align-items: flex-start; gap: 8px;
   margin-top: 12px; padding: 10px 14px;
@@ -911,6 +990,60 @@ a { color: var(--ink); text-decoration: none; transition: opacity 0.2s ease; }
   color: var(--ink); font-family: var(--sans);
   font-size: 14px; line-height: 1.6; margin: 0;
 }
+
+/* ----- Batch panel (multiple prompts, generated in parallel) ----- */
+.batch-panel {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.batch-note {
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 600;
+}
+.batch-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  backdrop-filter: blur(20px);
+  transition: border-color 0.2s ease;
+}
+.batch-card[data-status="done"]      { border-color: rgba(120, 220, 150, 0.45); }
+.batch-card[data-status="failed"]    { border-color: rgba(255, 120, 120, 0.45); }
+.batch-card[data-status="cancelled"] { border-color: var(--border); opacity: 0.75; }
+.batch-card-head { display: flex; align-items: center; gap: 14px; }
+.batch-card-info { flex: 1; min-width: 0; }
+.batch-card-prompt {
+  font-weight: 800; font-size: 15px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.batch-card-msg { color: var(--ink-dim); font-size: 12px; margin-top: 3px; }
+.batch-spinner {
+  width: 24px; height: 24px; border-radius: 50%;
+  border: 3px solid rgba(255, 92, 122, 0.18);
+  border-top-color: var(--coral);
+  animation: spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+.batch-card[data-status="done"] .batch-card-msg     { color: #7bd88a; }
+.batch-card[data-status="failed"] .batch-card-msg   { color: #ff8a8a; }
+.batch-pill {
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: var(--panel-2); border: 1px solid var(--border);
+  padding: 5px 10px; border-radius: 999px;
+}
+.batch-cancel { flex-shrink: 0; padding: 7px 12px; font-size: 12px; }
+.batch-card[data-status="done"] .job-bar,
+.batch-card[data-status="failed"] .job-bar,
+.batch-card[data-status="cancelled"] .job-bar { display: none; }
+.batch-card-result { margin-top: 18px; }
+.batch-result-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 
 /* ============================================================
    Library — horizontal scroll rails, one per format

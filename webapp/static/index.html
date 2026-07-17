@@ -257,22 +257,22 @@
           <h3 class="prompt-dialog-title">Enter your prompt and we will generate a slideshow for you</h3>
         </div>
 
-        <div class="prompt-textarea-wrap">
-          <textarea
-            id="prompt"
-            class="prompt-textarea"
-            rows="4"
-            maxlength="500"
-            placeholder="Describe your slideshow — any topic. e.g. &quot;5 habits that quietly wreck your sleep&quot;, &quot;a beginner's guide to index funds&quot;, or &quot;cozy fall dinners for cold rainy nights&quot;."
-            autocomplete="off"></textarea>
-          <div class="prompt-char-count"><span id="prompt-char">0</span>/500 characters</div>
+        <!-- One field per prompt. Add as many as you need — all generate in parallel. -->
+        <div class="prompt-fields" id="prompt-fields"></div>
+
+        <div class="prompt-fields-foot">
+          <button id="prompt-add" class="btn-pill" type="button">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            Add another prompt
+          </button>
+          <div class="prompt-char-count"><span id="prompt-lines">1</span> prompt<span id="prompt-lines-plural"></span></div>
         </div>
 
         <div class="prompt-hint">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-          <span>Promoting an app? Drop the name or link in your prompt
+          <span><b>Batch mode:</b> add a field per idea (up to 12) and we'll generate every slideshow at the same time. Promoting an app? Drop the name or link in a prompt
             (e.g. <em>"5 morning habits — promo for FocusKit (focuskit.app)"</em>)
-            and the final CTA slide + caption will plug it for you.</span>
+            and its CTA slide + caption will plug it for you.</span>
         </div>
 
         <div class="prompt-dialog-actions-row">
