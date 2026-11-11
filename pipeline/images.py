@@ -192,6 +192,7 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
         env_primary or "gemini-2.5-flash-image",
         model,  # caller override (if different from default)
         "gemini-2.5-flash-image",
+        "gemini-3.1-flash-image-preview",  # Google's named replacement for 2.5-flash-image (shutdown Oct 2 2026)
         "gemini-3.1-flash-image",
         "gemini-2.0-flash-preview-image-generation",  # legacy — 404s on new keys
     ]

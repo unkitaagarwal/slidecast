@@ -199,7 +199,8 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
                       temperature: float = 0.9) -> dict:
     """Call Gemini text model and return parsed JSON.
     Uses the same GEMINI_API_KEY as the image gen (Nano Banana).
-    Retries on 503 with exponential backoff, then falls back to gemini-1.5-flash."""
+    Retries on 503/429/timeout with exponential backoff, then walks the
+    fallback chain in _FALLBACK_TEXT_MODELS."""
     import time as _time
     from google import genai
     from google.genai import types as gtypes
@@ -213,14 +214,16 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
     client = genai.Client(api_key=api_key,
                           http_options={"timeout": _timeout_s * 1000})
 
-    # Model priority: try requested model first, then stable fallbacks
+    # Model priority: try requested model first, then live fallbacks.
+    # (gemini-1.5-flash and gemini-2.0-flash were shut down by Google and now
+    # return 404 NOT_FOUND, so they must not be in this chain.)
     models_to_try = [model]
-    if model != "gemini-1.5-flash":
-        models_to_try.append("gemini-1.5-flash")
-    if "gemini-2.0-flash" not in models_to_try:
-        models_to_try.append("gemini-2.0-flash")
+    for fb in _FALLBACK_TEXT_MODELS:
+        if fb not in models_to_try:
+            models_to_try.append(fb)
 
     last_exc = None
+    errors = []  # one entry per model, so the real cause isn't masked by the last fallback
     for attempt_model in models_to_try:
         for attempt in range(3):  # up to 3 retries per model
             try:
@@ -249,10 +252,30 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
                     print(f"  [gemini] {attempt_model} {reason} (attempt {attempt+1}/3) — retrying in {wait}s")
                     _time.sleep(wait)
                 else:
-                    break  # non-retryable error, try next model immediately
+                    break  # non-retryable error (e.g. 404 retired model), try next model immediately
+        errors.append(f"{attempt_model}: {str(last_exc)[:200]}")
+        print(f"  [gemini] {attempt_model} failed → {str(last_exc)[:160]}")
 
-    raise RuntimeError(f"All Gemini models failed. Last error: {last_exc}")
+    raise RuntimeError("All Gemini models failed. " + " | ".join(errors))
 
+
+# Retired model names that may still be set in a deployment's env vars.
+# Requests to these 404, so transparently map them to their replacement.
+_RETIRED_TEXT_MODELS = {
+    "gemini-1.5-flash": "gemini-3.6-flash",
+    "gemini-1.5-pro": "gemini-3.6-flash",
+    "gemini-2.0-flash": "gemini-3.6-flash",
+    "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
+}
+
+# Tried in order after the requested model. "gemini-flash-latest" is Google's
+# rolling alias, so the chain keeps working when pinned versions are retired.
+_FALLBACK_TEXT_MODELS = [
+    m.strip() for m in os.environ.get(
+        "GEMINI_TEXT_FALLBACK_MODELS",
+        "gemini-3.6-flash,gemini-flash-latest,gemini-2.5-flash",
+    ).split(",") if m.strip()
+]
 
 _DEFAULT_COMPILATION_MODEL = os.environ.get(
     "GEMINI_COMPILATION_MODEL", "gemini-2.5-flash"
@@ -266,12 +289,15 @@ def generate_compilation(theme: str, model: Optional[str] = None) -> Compilation
     The default model is gemini-2.5-flash (a thinking model — high quality
     but 90-150 s on Render). Override with the GEMINI_COMPILATION_MODEL env
     var to use a faster non-thinking model, e.g.:
-        export GEMINI_COMPILATION_MODEL=gemini-2.0-flash
+        export GEMINI_COMPILATION_MODEL=gemini-3.6-flash
     Typical wall-clock savings: 2-3× on the recipe-drafting phase. The
-    existing fallback chain (1.5-flash, 2.0-flash) still kicks in on 503/timeout.
+    fallback chain (_FALLBACK_TEXT_MODELS) still kicks in on errors.
     """
     if model is None:
         model = _DEFAULT_COMPILATION_MODEL
+    if model in _RETIRED_TEXT_MODELS:
+        print(f"  [gemini] {model} is retired — using {_RETIRED_TEXT_MODELS[model]}")
+        model = _RETIRED_TEXT_MODELS[model]
     data = _call_gemini_json(
         model=model,
         system_prompt=SYSTEM_PROMPT,
