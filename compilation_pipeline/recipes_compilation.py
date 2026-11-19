@@ -199,7 +199,8 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
                       temperature: float = 0.9) -> dict:
     """Call Gemini text model and return parsed JSON.
     Uses the same GEMINI_API_KEY as the image gen (Nano Banana).
-    Retries on 503 with exponential backoff, then falls back to gemini-1.5-flash."""
+    Retries on 503/429/timeouts with exponential backoff, then falls back to
+    current models (GEMINI_FALLBACK_MODELS, comma-separated, overrides the list)."""
     import time as _time
     from google import genai
     from google.genai import types as gtypes
@@ -211,16 +212,23 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
     # GEMINI_TEXT_TIMEOUT is in seconds; google-genai http_options timeout is ms.
     _timeout_s = max(int(os.environ.get("GEMINI_TEXT_TIMEOUT", "180")), 10)
     client = genai.Client(api_key=api_key,
-                          http_options={"timeout": _timeout_s * 1000})
+                          http_options={"timeout": _timeout_s * 1000,
+                                        # JSON mode / image output need v1beta;
+                                        # google-genai 3.x defaults to v1.
+                                        "api_version": os.environ.get("GEMINI_API_VERSION", "v1beta")})
 
-    # Model priority: try requested model first, then stable fallbacks
-    models_to_try = [model]
-    if model != "gemini-1.5-flash":
-        models_to_try.append("gemini-1.5-flash")
-    if "gemini-2.0-flash" not in models_to_try:
-        models_to_try.append("gemini-2.0-flash")
+    # Model priority: requested model first, then current fallbacks.
+    # (gemini-1.5-flash and gemini-2.0-flash have been retired by Google and
+    # now return 404, so they are no longer in the list.)
+    fallbacks = [m.strip() for m in os.environ.get(
+        "GEMINI_FALLBACK_MODELS", "gemini-2.5-flash,gemini-3.8-flash").split(",") if m.strip()]
+    models_to_try = []
+    for m in [model, *fallbacks]:
+        if m and m not in models_to_try:
+            models_to_try.append(m)
 
     last_exc = None
+    errors = []   # (model, short error) for every model that failed
     for attempt_model in models_to_try:
         for attempt in range(3):  # up to 3 retries per model
             try:
@@ -232,7 +240,17 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
                         response_mime_type="application/json",
                     ),
                 )
-                raw = resp.candidates[0].content.parts[0].text
+                # resp.text joins the answer's text parts and skips "thought"
+                # parts; newer google-genai versions can return a thought part
+                # first, so parts[0].text may be empty.
+                raw = resp.text
+                if not raw:
+                    raw = "".join(getattr(p_, "text", "") or ""
+                                  for p_ in resp.candidates[0].content.parts
+                                  if not getattr(p_, "thought", False))
+                if not raw:
+                    raise RuntimeError(f"Gemini returned no text (finish_reason="
+                                       f"{getattr(resp.candidates[0], 'finish_reason', '?')})")
                 if attempt_model != model:
                     print(f"  [gemini] used fallback model {attempt_model}")
                 return json.loads(raw)
@@ -249,9 +267,12 @@ def _call_gemini_json(model: str, system_prompt: str, user_prompt: str,
                     print(f"  [gemini] {attempt_model} {reason} (attempt {attempt+1}/3) — retrying in {wait}s")
                     _time.sleep(wait)
                 else:
+                    print(f"  [gemini] {attempt_model} failed → {err_str[:200]}")
                     break  # non-retryable error, try next model immediately
+        if last_exc is not None:
+            errors.append(f"{attempt_model}: {str(last_exc)[:200]}")
 
-    raise RuntimeError(f"All Gemini models failed. Last error: {last_exc}")
+    raise RuntimeError("All Gemini models failed. " + " | ".join(errors))
 
 
 _DEFAULT_COMPILATION_MODEL = os.environ.get(
@@ -265,10 +286,10 @@ def generate_compilation(theme: str, model: Optional[str] = None) -> Compilation
 
     The default model is gemini-2.5-flash (a thinking model — high quality
     but 90-150 s on Render). Override with the GEMINI_COMPILATION_MODEL env
-    var to use a faster non-thinking model, e.g.:
-        export GEMINI_COMPILATION_MODEL=gemini-2.0-flash
-    Typical wall-clock savings: 2-3× on the recipe-drafting phase. The
-    existing fallback chain (1.5-flash, 2.0-flash) still kicks in on 503/timeout.
+    var to use a different (e.g. faster) model. Use a CURRENT model name —
+    retired ones (gemini-1.5-*, gemini-2.0-*) return 404. If the chosen model
+    fails, the fallback chain (GEMINI_FALLBACK_MODELS, default
+    gemini-2.5-flash, gemini-3.8-flash) is tried next.
     """
     if model is None:
         model = _DEFAULT_COMPILATION_MODEL
