@@ -2537,6 +2537,19 @@ def api_folder(path: str = ""):
     return {"mode": "multi", "slideshows": slideshows, "skipped": skipped}
 
 
+@app.get("/api/slideshow-dir")
+def api_slideshow_dir(format: str = "", slug: str = ""):
+    """Resolve a generated slideshow (format + slug) to its folder on disk so
+    the scheduler can load it with /api/folder ("Send to scheduler")."""
+    slug = os.path.basename(slug.strip())
+    if not slug:
+        raise HTTPException(400, "slug required")
+    d = _resolve_single_dir(slug) if format == "single" else _resolve_comp_dir(slug)
+    if not d:
+        raise HTTPException(404, f"slideshow not found: {slug}")
+    return {"path": d}
+
+
 @app.get("/api/file")
 def api_file(path: str = ""):
     """Serve a local image file to the browser (for slide previews)."""

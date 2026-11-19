@@ -863,6 +863,10 @@ body {
             onblur="this.style.borderColor='var(--border)'">
           <span>mins</span>
         </div>
+        <div class="sr-toggle" id="draftToggle" onclick="toggleDrafts()" title="When ON, nothing auto-publishes: TikTok posts land in the TikTok app inbox (publish within 24h of the scheduled time), YouTube uploads as Private. Instagram has no draft API, so Instagram accounts still publish directly at their scheduled (or random) time">
+          <span class="sr-pip"></span>
+          <span>Send as drafts</span>
+        </div>
         <button class="btn btn-outline btn-sm" onclick="clearQueue()">Clear All</button>
         <button class="btn btn-success" id="schedBtn" onclick="scheduleAll()">
           🚀 Schedule All
@@ -918,6 +922,19 @@ function markScheduled(folderPath) {
 }
 function wasScheduledBefore(folderPath) {
   return !!loadScheduledHistory()[folderPath];
+}
+// Returns true if the folder may be added. Already in the queue → blocked.
+// Scheduled in an earlier session → ask the user whether to repost it.
+function allowRepost(name) {
+  if (isInQueue(name)) {
+    toast(`"${name}" is already in the queue`, "fail");
+    return false;
+  }
+  const when = loadScheduledHistory()[name];
+  if (!when) return true;
+  const ok = confirm(`"${name}" was already scheduled on ${new Date(when).toLocaleString()}.\n\nSchedule it again?`);
+  if (!ok) toast(`"${name}" not added`, "");
+  return ok;
 }
 function isInQueue(folderPath) {
   return S.posts.some(p => p.folderPath === folderPath);
@@ -980,6 +997,7 @@ async function connect() {
     document.getElementById("schedModeCard").classList.remove("hidden");
     document.getElementById("instaAudioCard").classList.remove("hidden");
     toast(`Connected — ${S.integrations.length} account(s) found`, "ok");
+    loadSentFromGenerator();
     btn.style.display = "none";
     document.getElementById("clearKeyBtn").style.display = "";
   } catch (e) {
@@ -1226,14 +1244,16 @@ function buildSettings(intId, title, needsMusic = false, isCarousel = false, isV
       brand_content_toggle:    false,
       brand_organic_toggle:    false,
       video_made_with_ai:      false,
-      content_posting_method:  "DIRECT_POST"
+      // UPLOAD = send to the TikTok app inbox as a draft (title/caption kept,
+      // other settings ignored by TikTok). DIRECT_POST = publish.
+      content_posting_method:  draftsOn ? "UPLOAD" : "DIRECT_POST"
     };
   } else if (pl.includes("youtube")) {
     // For short vertical videos post as YouTube Shorts explicitly.
     // youtubeVideoType tells Postiz to use the Shorts upload path.
     // type is the privacy setting (always "public").
     extra = {
-      type:             "public",
+      type:             draftsOn ? "private" : "public",
       youtubeVideoType: isVideo ? "short" : "video",
     };
   } else if (pl.includes("linkedin")) {
@@ -1367,8 +1387,7 @@ async function handleFolderBrowse(input) {
 
     if (isSingle) {
       // ── Dedup check for single folder ──
-      if (isInQueue(rootName) || wasScheduledBefore(rootName)) {
-        toast(`"${rootName}" is already queued or was previously scheduled`, "fail");
+      if (!allowRepost(rootName)) {
         btn.disabled = false; btn.innerHTML = "Choose Folder"; return;
       }
       // ── Single slideshow folder ──────────────────────────────────────────
@@ -1599,9 +1618,34 @@ function makePostFromFiles(folderName, slideFiles, metadata, stepIndex) {
   };
 }
 
+// ────────────────────────── "Send to scheduler" from the generator ──────────
+// The generator page opens /scheduler?load=<format>:<slug>&load=… ; once the
+// Postiz key is connected, each slideshow is loaded into the queue, ready to
+// schedule. Runs once — the query string is removed afterwards.
+async function loadSentFromGenerator() {
+  const params = new URLSearchParams(location.search);
+  const items  = params.getAll("load");
+  if (!items.length) return;
+  history.replaceState(null, "", location.pathname);
+  for (const item of items) {
+    const i = item.indexOf(":");
+    const format = item.slice(0, i), slug = item.slice(i + 1);
+    try {
+      const res = await fetch(`/api/slideshow-dir?format=${encodeURIComponent(format)}&slug=${encodeURIComponent(slug)}`);
+      if (!res.ok) throw new Error(await res.text());
+      const { path } = await res.json();
+      await loadSlideshowFromFolder(path);
+    } catch (e) {
+      toast(`Couldn't load "${slug}": ${String(e.message || e).slice(0, 120)}`, "fail");
+    }
+  }
+  document.getElementById("queueWrap")?.scrollIntoView({ behavior: "smooth" });
+}
+
 // ────────────────────────── Load slideshow from folder (manual path) ────────
-async function loadSlideshowFromFolder() {
-  const folderPath = document.getElementById("folderInput").value.trim();
+async function loadSlideshowFromFolder(pathArg) {
+  const folderPath = (typeof pathArg === "string" ? pathArg
+                      : document.getElementById("folderInput").value).trim();
   if (!folderPath) { toast("Enter a folder path first", "fail"); return; }
 
   const btn = document.getElementById("loadFolderBtn");
@@ -1650,8 +1694,7 @@ async function loadSlideshowFromFolder() {
       // ── Single slideshow folder ──────────────────────────────────────────
       const { slides, metadata } = data;
       const folderName = folderPath.split("/").pop();
-      if (isInQueue(folderName) || wasScheduledBefore(folderName)) {
-        toast(`"${folderName}" is already queued or was previously scheduled`, "fail");
+      if (!allowRepost(folderName)) {
         btn.disabled = false; btn.innerHTML = "Load"; return;
       }
       if (!slides || slides.length < 2) {
@@ -1762,9 +1805,38 @@ function cadenceChanged() {
 
 // Returns UTC minutes from midnight UTC for slot i of n slots within the daily window.
 // Window: 8 AM EST (13:00 UTC) → 8 PM EST (01:00 UTC next day = 25:00) = 12 hours.
+const CADENCE_WIN_START = 13 * 60;   // 8 AM EST = 13:00 UTC
+const CADENCE_WIN_END   = 25 * 60;   // 8 PM EST = next-day 01:00 UTC
+
+// Earliest time a post can be scheduled: now + 2 min, rounded up to the minute
+// (the date input drops seconds, and the time must still be in the future when
+// "Schedule All" is clicked).
+function cadenceEarliestMs() {
+  const d = new Date(Date.now() + 2 * 60000);
+  if (d.getSeconds() || d.getMilliseconds()) d.setMinutes(d.getMinutes() + 1, 0, 0);
+  return d.getTime();
+}
+
+// UTC ms of a local date's window end (8 PM EST = 5 PM PST).
+function cadenceWinEndMs(localDay) {
+  return Date.UTC(localDay.getFullYear(), localDay.getMonth(), localDay.getDate())
+         + CADENCE_WIN_END * 60000;
+}
+
+// First day the cadence actually uses: the chosen start date, moved forward
+// while that day's window has already closed (e.g. scheduling after 5 PM PST
+// starts post #1 at 5 AM PST the next morning instead of "now").
+function cadenceEffectiveStart() {
+  const d = S.cadenceStart ? new Date(S.cadenceStart) : new Date();
+  d.setHours(0, 0, 0, 0);
+  const earliest = cadenceEarliestMs();
+  for (let i = 0; i < 366 && earliest >= cadenceWinEndMs(d); i++) d.setDate(d.getDate() + 1);
+  return d;
+}
+
 function cadenceSlotUTCMinutes(i, n) {
-  const WIN_START = 13 * 60;   // 8 AM EST = 13:00 UTC
-  const WIN_END   = 25 * 60;   // 8 PM EST = next-day 01:00 UTC
+  const WIN_START = CADENCE_WIN_START;
+  const WIN_END   = CADENCE_WIN_END;
   const winLen    = WIN_END - WIN_START;   // 720 minutes = 12 hours
   if (n === 1) return WIN_START + winLen / 2;   // single post → midpoint
   return WIN_START + i * winLen / (n - 1);      // spread from start to end
@@ -1777,14 +1849,25 @@ function cadenceDT(postIndex) {
   const slot = postIndex % ppd;
 
   // Base date: cadenceStart (midnight local) + day offset
-  const base = S.cadenceStart ? new Date(S.cadenceStart) : new Date();
-  base.setHours(0, 0, 0, 0);
+  const base = cadenceEffectiveStart();
   base.setDate(base.getDate() + day);
 
   // Compute UTC midnight of that local date
   // We use Date.UTC with local year/month/day so the slot offsets are from UTC midnight
   const utcMidnight = Date.UTC(base.getFullYear(), base.getMonth(), base.getDate());
-  const slotUTCMs   = utcMidnight + cadenceSlotUTCMinutes(slot, ppd) * 60000;
+  let slotUTCMs     = utcMidnight + cadenceSlotUTCMinutes(slot, ppd) * 60000;
+
+  // If the day's window has already started (e.g. the start date is today and
+  // it's past 8 AM EST), don't hand out slots in the past: the first slot starts
+  // from the current time, and the day's remaining slots are spread evenly from
+  // there to the end of the window (at least 15 min apart).
+  const winStartMs = utcMidnight + CADENCE_WIN_START * 60000;
+  const winEndMs   = utcMidnight + CADENCE_WIN_END   * 60000;
+  const earliestMs = cadenceEarliestMs();
+  if (earliestMs > winStartMs) {
+    const gapMs = ppd > 1 ? Math.max((winEndMs - earliestMs) / (ppd - 1), 15 * 60000) : 0;
+    slotUTCMs = earliestMs + slot * gapMs;
+  }
 
   return localDTStr(new Date(slotUTCMs));
 }
@@ -1792,7 +1875,8 @@ function cadenceDT(postIndex) {
 // Reassign scheduled times for all pending/error posts using the cadence.
 function applyDailyCadence() {
   if (S.schedMode !== "cadence") return;
-  const pending = S.posts.filter(p => p.status === "pending" || p.status === "error");
+  // Posts with a manually picked time keep it and don't use up a cadence slot.
+  const pending = S.posts.filter(p => (p.status === "pending" || p.status === "error") && !p.manualWhen);
   pending.forEach((p, i) => { p.when = cadenceDT(i); });
   renderQueue();
   updateCadencePreview();
@@ -1802,7 +1886,7 @@ function updateCadencePreview() {
   const preview = document.getElementById("cadencePreview");
   if (!preview) return;
   const ppd = S.postsPerDay || 3;
-  const pendingCount = S.posts.filter(p => p.status === "pending" || p.status === "error").length;
+  const pendingCount = S.posts.filter(p => (p.status === "pending" || p.status === "error") && !p.manualWhen).length;
   const totalDays = pendingCount ? Math.ceil(pendingCount / ppd) : 2;
   const showDays  = Math.min(totalDays, 4);
 
@@ -1813,10 +1897,11 @@ function updateCadencePreview() {
       const dt = new Date(cadenceDT(day * ppd + slot));
       slots.push(dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }));
     }
-    const base = S.cadenceStart ? new Date(S.cadenceStart) : new Date();
-    base.setHours(0, 0, 0, 0);
+    const base = cadenceEffectiveStart();
     base.setDate(base.getDate() + day);
-    const label = day === 0 ? "Today" : day === 1 ? "Tomorrow"
+    const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
+    const dayDiff  = Math.round((base - todayMid) / 86400000);
+    const label = dayDiff === 0 ? "Today" : dayDiff === 1 ? "Tomorrow"
       : base.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
     const postNums = [];
     for (let s = 0; s < ppd; s++) {
@@ -1850,6 +1935,9 @@ function renderQueue() {
     byId(`cap-${p.id}`)?.addEventListener("input", e => { p.caption = e.target.value; });
     byId(`dt-${p.id}`)?.addEventListener("change", e => {
       p.when = e.target.value;
+      // A time the user picks by hand is kept as-is (any hour, including after
+      // 5 PM PST); the daily cadence no longer moves this post.
+      p.manualWhen = !!e.target.value;
       if (scheduleRandomlyOn) { regenerateAccountTimes(p); refreshTimesTable(p); }
     });
     byId(`rm-${p.id}`)?.addEventListener("click", () => removePost(p.id));
@@ -2078,6 +2166,19 @@ async function runConcurrent(tasks, limit = 8) {
   return results;
 }
 
+// ── Send-as-drafts toggle ───────────────────────────────────────────────────
+// TikTok → content_posting_method UPLOAD (lands in the TikTok app inbox; the
+//          account owner must publish it within 24h or TikTok discards it).
+// YouTube → uploaded as Private; owner flips it to Public in YouTube Studio.
+// Instagram → unchanged: no draft API, so it still publishes directly at its
+//             scheduled (or random, if Schedule Randomly is on) time.
+let draftsOn = false;
+function toggleDrafts() {
+  draftsOn = !draftsOn;
+  document.getElementById("draftToggle").classList.toggle("active", draftsOn);
+  if (draftsOn) toast("Drafts mode: TikTok → inbox, YouTube → private, Instagram still posts directly", "");
+}
+
 // ── Schedule Randomly toggle state ──────────────────────────────────────────
 let scheduleRandomlyOn = false;
 let randomMaxMins      = 90; // user-configurable upper bound
@@ -2163,6 +2264,17 @@ async function scheduleAll() {
   const pending = S.posts.filter(p => p.status === "pending" || p.status === "error");
   if (!pending.length) { toast("No pending posts to schedule", "fail"); return; }
 
+  // Cadence mode: slots are computed when the queue is built. If any has
+  // slipped into the past while the user picked accounts, recompute the whole
+  // cadence from now (after 5 PM PST this rolls to tomorrow 5 AM PST).
+  // (Manually picked times are never moved; a past manual time fails validation below.)
+  if (S.schedMode === "cadence" && pending.some(p => !p.manualWhen && p.when && new Date(p.when) <= new Date())) {
+    applyDailyCadence();
+    if (scheduleRandomlyOn) pending.filter(p => !p.manualWhen).forEach(p => regenerateAccountTimes(p));
+    renderQueue();
+    toast("Some times had passed — cadence recalculated from now", "");
+  }
+
   // Validate
   for (const p of pending) {
     const label = p.slideshow ? `Slideshow (${p.files.length} slides)` : p.file.name;
@@ -2201,12 +2313,21 @@ async function scheduleAll() {
       // Audio on Instagram works only on Reels (video), NOT on photo carousels.
       // Instagram slideshows are ALWAYS converted to Reels (same automatic
       // behaviour as TikTok's autoAddMusic) — no user toggle required.
+      // Instagram always publishes directly — drafts mode does not apply to it
+      // (Instagram has no draft API).
       const instaAccountIds = p.accounts.filter(id => {
         const obj = S.integrations.find(i => i.id === id) || {};
         return platform(obj).includes("instagram");
       });
-      const otherAccountIds = p.accounts.filter(id => !instaAccountIds.includes(id));
-      const doReelPath = p.slideshow && instaAccountIds.length > 0;
+      // YouTube only accepts video, so for slideshows YouTube accounts get the
+      // same slideshow→MP4 as Instagram Reels (uploaded as a YouTube Short).
+      const ytAccountIds = p.slideshow ? p.accounts.filter(id => {
+        const obj = S.integrations.find(i => i.id === id) || {};
+        return platform(obj).includes("youtube");
+      }) : [];
+      const otherAccountIds = p.accounts.filter(id =>
+        !instaAccountIds.includes(id) && !ytAccountIds.includes(id));
+      const doReelPath = p.slideshow && (instaAccountIds.length > 0 || ytAccountIds.length > 0);
 
       if (p.slideshow) {
         // Instagram raised its carousel cap from 10 → 20 slides in late 2024.
@@ -2243,7 +2364,8 @@ async function scheduleAll() {
             console.log("[instagram reel] uploaded video:", reelMediaItem);
           } catch (err) {
             console.warn("[instagram reel] failed, falling back to carousel:", err);
-            toast(`⚠ ${postLabel}: Reel conversion failed — posting as carousel (no audio)`, "");
+            toast(`⚠ ${postLabel}: Reel conversion failed — posting as carousel (no audio)` +
+                  (ytAccountIds.length ? "; YouTube skipped (needs a video)" : ""), "");
           }
         }
 
@@ -2347,6 +2469,7 @@ async function scheduleAll() {
 
       // Build per-account tasks — each wraps the API call AND updates row status
       const scheduleTasks = [];
+      const taskAccountIds = [];   // parallel to scheduleTasks
 
       // ── POST 1: Instagram Reel tasks ──────────────────────────────────
       if (reelMediaItem && instaAccountIds.length > 0) {
@@ -2358,6 +2481,7 @@ async function scheduleAll() {
         };
         for (const intId of instaAccountIds) {
           const isoDate = p.accountTimes[intId] || baseDate.toISOString();
+          taskAccountIds.push(intId);
           scheduleTasks.push(async () => {
             setAccountStatus(p, intId, "uploading");
             await api("POST", "/posts", {
@@ -2384,6 +2508,7 @@ async function scheduleAll() {
           content = (content + "\n\n#Shorts").trim();
         }
         const isoDate = p.accountTimes[intId] || baseDate.toISOString();
+        taskAccountIds.push(intId);
         scheduleTasks.push(async () => {
           setAccountStatus(p, intId, "uploading");
           await api("POST", "/posts", {
@@ -2396,9 +2521,29 @@ async function scheduleAll() {
         });
       }
 
+      // ── POST 3: YouTube accounts for slideshows → the slideshow MP4 as a Short ──
+      for (const intId of ytAccountIds) {
+        const isoDate = p.accountTimes[intId] || baseDate.toISOString();
+        const content = p.caption.includes("#Shorts") ? p.caption : (p.caption + "\n\n#Shorts").trim();
+        taskAccountIds.push(intId);
+        scheduleTasks.push(async () => {
+          if (!reelMediaItem) throw new Error("YouTube needs a video — slideshow→video conversion failed");
+          setAccountStatus(p, intId, "uploading");
+          await api("POST", "/posts", {
+            type: "schedule", date: isoDate, shortLink: false, tags: [],
+            posts: [{ integration: { id: intId },
+                      value: [{ content, image: [reelMediaItem] }],
+                      // isVideo=true → "#Shorts" title + youtubeVideoType "short";
+                      // privacy follows drafts mode (private / public).
+                      settings: buildSettings(intId, title, needsMusic, false, true) }],
+          });
+          setAccountStatus(p, intId, "done");
+        });
+      }
+
       // Fire all concurrently (max 8); mark failures live
       label.textContent = `Scheduling to ${scheduleTasks.length} account(s)…`;
-      const allAccountIds = [...instaAccountIds, ...accountsForCarousel];
+      const allAccountIds = taskAccountIds;
 
       // Wrap each task to catch per-account errors and mark them failed
       const wrappedTasks = scheduleTasks.map((task, i) => async () => {
@@ -2798,6 +2943,7 @@ window.buildSlideshowPostFromPaths = buildSlideshowPostFromPaths;
 window.scheduleAll                 = scheduleAll;
 window.clearQueue                  = clearQueue;
 window.toggleScheduleRandomly      = toggleScheduleRandomly;
+window.toggleDrafts                = toggleDrafts;
 window.updateRandomMax             = updateRandomMax;
 window.toggleDefaultAcc            = toggleDefaultAcc;
 window.selectAllChannels           = selectAllChannels;
