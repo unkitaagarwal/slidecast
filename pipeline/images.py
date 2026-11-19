@@ -177,7 +177,10 @@ def _generate_with_gemini(full_prompt: str, model: str) -> bytes:
     # GEMINI_IMAGE_TIMEOUT is in seconds; google-genai http_options timeout is ms.
     _timeout_s = max(int(os.environ.get("GEMINI_IMAGE_TIMEOUT", "90")), 10)
     client = genai.Client(api_key=api_key,
-                          http_options={"timeout": _timeout_s * 1000})
+                          http_options={"timeout": _timeout_s * 1000,
+                                        # JSON mode / image output need v1beta;
+                                        # google-genai 3.x defaults to v1.
+                                        "api_version": os.environ.get("GEMINI_API_VERSION", "v1beta")})
     verbose = os.environ.get("GEMINI_IMAGE_VERBOSE", "").lower() in ("1", "true", "yes")
 
     # ── Tier 1: Gemini generate_content models ───────────────────────────────
