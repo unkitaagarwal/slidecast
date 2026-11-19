@@ -340,6 +340,33 @@
     ta.readOnly = false;
   }
 
+  // Slideshows generated on this page that haven't been sent to the scheduler yet.
+  const readyForScheduler = [];
+  const sendToSchedulerBtn = document.getElementById('send-to-scheduler');
+  if (sendToSchedulerBtn) {
+    sendToSchedulerBtn.addEventListener('click', (e) => {
+      const stillRunning = document.querySelectorAll(
+        '.prompt-field-row[data-state="running"], .prompt-field-row[data-state="pending"]').length;
+      if (!readyForScheduler.length) {
+        if (stillRunning) {
+          e.preventDefault();
+          alert('Your slideshow is still generating — click "Send to scheduler" again when it shows "Ready".');
+        }
+        return;   // nothing generated yet → just open the scheduler
+      }
+      if (stillRunning && !confirm(
+          `${stillRunning} slideshow(s) are still generating. Send the ${readyForScheduler.length} finished one(s) now?`)) {
+        e.preventDefault();
+        return;
+      }
+      e.preventDefault();
+      const qs = readyForScheduler
+        .map((r) => 'load=' + encodeURIComponent(`${r.format}:${r.slug}`)).join('&');
+      readyForScheduler.length = 0;
+      window.location.href = `/scheduler?${qs}`;
+    });
+  }
+
   // Poll a single job and drive its row's progress bar, message, and download.
   async function pollRow(jobId, row, fmt) {
     const barFill = row.querySelector('.job-bar-fill');
@@ -392,6 +419,7 @@
       if (j.status === 'done') {
         if (barFill) barFill.style.width = '100%';
         setRowState(row, 'done', '✓ Ready to download');
+        readyForScheduler.push({ format: j.result.format, slug: j.result.slug });
         attachDownload(row, j.result.format, j.result.slug, j.result.slide_urls || []);
         break;
       }
